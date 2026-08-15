@@ -1,4 +1,4 @@
-import { FileBarChart, ChevronDown, ChevronUp, FileDown, CheckCircle, XCircle, Plus, Trash2, Edit } from 'lucide-react'
+import { FileBarChart, ChevronDown, ChevronUp, FileDown, CheckCircle, XCircle, Plus, Trash2, Edit, Receipt, FileText } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { z } from 'zod'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 
@@ -45,6 +45,16 @@ export function BoletinsPage() {
   const [expQty, setExpQty] = useState('1')
   const [expVal, setExpVal] = useState('')
 
+  // Invoice Form state
+  const [openInvoice, setOpenInvoice] = useState(false)
+  const [boletimToInvoice, setBoletimToInvoice] = useState<any>(null)
+  const [invoiceData, setInvoiceData] = useState({
+    invoice_number: '',
+    due_date: '',
+    invoice_file: null as File | null,
+    boleto_file: null as File | null,
+  })
+
   const queryClient = useQueryClient()
 
   const { data: boletins = [], isLoading, isFetching } = useQuery({
@@ -54,7 +64,7 @@ export function BoletinsPage() {
         .from('measurement_bulletins')
         .select(`
           *,
-          client:clients(name),
+          client:clients(name, payment_term_days),
           technician:profiles(name),
           service_order:service_orders(os_number, scheduled_at),
           expenses:bulletin_expenses(*)
@@ -66,11 +76,10 @@ export function BoletinsPage() {
     }
   })
 
-  const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm<EditFormData>({
+  const { register, handleSubmit, reset, watch, formState: { isSubmitting } } = useForm<EditFormData>({
     resolver: zodResolver(editSchema)
   })
 
-  // Watch for dynamic calculation
   const wHectares = watch('hectares_sprayed')
   const wPrice = watch('price_per_ha')
   const wPct = watch('commission_pct')
@@ -83,7 +92,6 @@ export function BoletinsPage() {
       const subtotal = data.hectares_sprayed * data.price_per_ha
       const comissao = subtotal * (data.commission_pct / 100)
       
-      // Recalculate total_value based on expenses
       const expensesTotal = selectedBoletim.expenses?.reduce((acc: number, curr: any) => acc + Number(curr.total_value), 0) || 0
       const total_value = subtotal + expensesTotal
 
@@ -108,41 +116,98 @@ export function BoletinsPage() {
   })
 
   const changeStatus = useMutation({
-    mutationFn: async ({ id, status, total, comissao, tecnicoId, clientName }: { id: string, status: string, total: number, comissao: number, tecnicoId: string, clientName: string }) => {
+    mutationFn: async ({ id, status }: { id: string, status: string }) => {
       const { error } = await supabase.from('measurement_bulletins').update({ status }).eq('id', id)
       if (error) throw error
-
-      if (status === 'approved') {
-        const today = new Date().toISOString().split('T')[0]
-        // Insert Conta a Receber (Income)
-        await supabase.from('transactions').insert([{
-          type: 'income',
-          description: `Serviço Prestado - ${clientName}`,
-          amount: total,
-          date: today,
-          status: 'pending',
-          bulletin_id: id
-        }])
-
-        // Insert Conta a Pagar (Commission)
-        if (comissao > 0 && tecnicoId) {
-          await supabase.from('transactions').insert([{
-            type: 'expense',
-            description: `Comissão - Boletim BM-${id.substring(0,4)}`,
-            amount: comissao,
-            date: today,
-            status: 'pending',
-            bulletin_id: id,
-            technician_id: tecnicoId
-          }])
-        }
-      }
     },
     onSuccess: (_, variables) => {
       toast.success(`Boletim marcado como ${STATUS_MAP[variables.status].label}!`)
       queryClient.invalidateQueries({ queryKey: ['boletins'] })
     }
   })
+
+  const invoiceBoletim = useMutation({
+    mutationFn: async () => {
+      if (!boletimToInvoice) return
+      
+      let invoiceUrl = null
+      let boletoUrl = null
+
+      if (invoiceData.invoice_file) {
+        const fileExt = invoiceData.invoice_file.name.split('.').pop()
+        const fileName = `nf-${boletimToInvoice.id}-${Math.random()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('attachments').upload(fileName, invoiceData.invoice_file)
+        if (uploadError) throw uploadError
+        invoiceUrl = supabase.storage.from('attachments').getPublicUrl(fileName).data.publicUrl
+      }
+
+      if (invoiceData.boleto_file) {
+        const fileExt = invoiceData.boleto_file.name.split('.').pop()
+        const fileName = `boleto-${boletimToInvoice.id}-${Math.random()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('attachments').upload(fileName, invoiceData.boleto_file)
+        if (uploadError) throw uploadError
+        boletoUrl = supabase.storage.from('attachments').getPublicUrl(fileName).data.publicUrl
+      }
+
+      const { error } = await supabase.from('measurement_bulletins').update({
+        status: 'invoiced',
+        invoice_number: invoiceData.invoice_number,
+        invoice_url: invoiceUrl,
+        boleto_url: boletoUrl
+      }).eq('id', boletimToInvoice.id)
+      
+      if (error) throw error
+
+      const dueDate = invoiceData.due_date || new Date().toISOString().split('T')[0]
+      const today = new Date().toISOString().split('T')[0]
+
+      // Income transaction
+      await supabase.from('transactions').insert([{
+        type: 'income',
+        description: `Serviço Prestado - NF ${invoiceData.invoice_number || 'S/N'} - ${boletimToInvoice.client?.name}`,
+        amount: boletimToInvoice.total_value,
+        date: dueDate,
+        status: 'pending',
+        bulletin_id: boletimToInvoice.id
+      }])
+
+      // Expense transaction
+      if (boletimToInvoice.commission_value > 0 && boletimToInvoice.technician_id) {
+        await supabase.from('transactions').insert([{
+          type: 'expense',
+          description: `Comissão - Boletim BM-${boletimToInvoice.id.substring(0,4)}`,
+          amount: boletimToInvoice.commission_value,
+          date: today,
+          status: 'pending',
+          bulletin_id: boletimToInvoice.id,
+          technician_id: boletimToInvoice.technician_id
+        }])
+      }
+    },
+    onSuccess: () => {
+      toast.success('Boletim faturado com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['boletins'] })
+      setOpenInvoice(false)
+      setInvoiceData({ invoice_number: '', due_date: '', invoice_file: null, boleto_file: null })
+      setBoletimToInvoice(null)
+    },
+    onError: (e: any) => toast.error('Erro ao faturar: ' + e.message)
+  })
+
+  function handleOpenInvoice(b: any) {
+    const termDays = b.client?.payment_term_days || 0
+    const dueDate = new Date()
+    dueDate.setDate(dueDate.getDate() + termDays)
+    
+    setBoletimToInvoice(b)
+    setInvoiceData({
+      invoice_number: '',
+      due_date: dueDate.toISOString().split('T')[0],
+      invoice_file: null,
+      boleto_file: null
+    })
+    setOpenInvoice(true)
+  }
 
   const addExpense = useMutation({
     mutationFn: async (boletimId: string) => {
@@ -158,7 +223,6 @@ export function BoletinsPage() {
       }])
       if (error) throw error
 
-      // Also update boletim total_value
       const b = boletins.find((x: any) => x.id === boletimId)
       if (b) {
         await supabase.from('measurement_bulletins').update({
@@ -292,20 +356,25 @@ export function BoletinsPage() {
                       <TableCell className="text-center"><Badge variant={s.variant}>{s.label}</Badge></TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {b.status === 'approved' && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => handleOpenInvoice(b)} title="Faturar (Gerar NF/Boleto)">
+                              <Receipt className="h-4 w-4" />
+                            </Button>
+                          )}
                           {isPending && (
                             <>
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenEdit(b)} title="Editar Valores">
                                 <Edit className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => changeStatus.mutate({ id: b.id, status: 'approved', total: b.total_value, comissao: b.commission_value, tecnicoId: b.technician_id, clientName: b.client?.name || 'Cliente' })} title="Aprovar">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => changeStatus.mutate({ id: b.id, status: 'approved' })} title="Aprovar (Validar Valores)">
                                 <CheckCircle className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => changeStatus.mutate({ id: b.id, status: 'rejected', total: 0, comissao: 0, tecnicoId: '', clientName: '' })} title="Rejeitar">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => changeStatus.mutate({ id: b.id, status: 'rejected' })} title="Rejeitar">
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             </>
                           )}
-                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Gerar PDF">
+                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Gerar PDF do Boletim">
                             <FileDown className="h-4 w-4" />
                           </Button>
                         </div>
@@ -316,7 +385,6 @@ export function BoletinsPage() {
                       <TableRow className="bg-muted/20 hover:bg-muted/20">
                         <TableCell colSpan={10} className="p-4">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Left: details */}
                             <div className="space-y-4">
                               <h3 className="font-semibold text-sm flex items-center gap-2">
                                 Detalhamento do Serviço
@@ -343,9 +411,29 @@ export function BoletinsPage() {
                                   <span className="font-semibold">{formatCurrency(b.commission_value)}</span>
                                 </div>
                               </div>
+                              
+                              {b.status === 'invoiced' && (
+                                <div className="mt-4 p-4 rounded-lg border border-blue-500/30 bg-blue-500/5 space-y-3">
+                                  <h4 className="font-semibold text-sm text-blue-700 flex items-center gap-2">
+                                    <Receipt className="h-4 w-4" /> Dados de Faturamento
+                                  </h4>
+                                  <p className="text-sm"><span className="text-muted-foreground">Nº da Nota:</span> {b.invoice_number || 'Não informado'}</p>
+                                  <div className="flex gap-4">
+                                    {b.invoice_url && (
+                                      <a href={b.invoice_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                                        <FileText className="h-3 w-3" /> Ver Nota Fiscal
+                                      </a>
+                                    )}
+                                    {b.boleto_url && (
+                                      <a href={b.boleto_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                                        <FileText className="h-3 w-3" /> Ver Boleto
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
-                            {/* Right: expenses */}
                             <div className="space-y-4">
                               <h3 className="font-semibold text-sm">Despesas e Adicionais</h3>
                               <div className="rounded-lg border bg-card">
@@ -411,6 +499,7 @@ export function BoletinsPage() {
         </CardContent>
       </Card>
 
+      {/* Edit Values Modal */}
       <Dialog open={openEdit} onOpenChange={setOpenEdit}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -446,6 +535,65 @@ export function BoletinsPage() {
               <Button type="submit" disabled={isSubmitting || updateBoletim.isPending}>Salvar Alterações</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Modal */}
+      <Dialog open={openInvoice} onOpenChange={setOpenInvoice}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Faturar Boletim BM-{boletimToInvoice?.id?.substring(0, 4)}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="bg-muted/50 p-3 rounded-lg text-sm mb-2">
+              <p><strong>Cliente:</strong> {boletimToInvoice?.client?.name}</p>
+              <p><strong>Valor Total:</strong> {formatCurrency(boletimToInvoice?.total_value)}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Prazo cadastrado: {boletimToInvoice?.client?.payment_term_days || 0} dias
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Número da Nota Fiscal</Label>
+              <Input 
+                value={invoiceData.invoice_number} 
+                onChange={e => setInvoiceData(prev => ({ ...prev, invoice_number: e.target.value }))} 
+                placeholder="Ex: 12345"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Data de Vencimento</Label>
+              <Input 
+                type="date" 
+                value={invoiceData.due_date} 
+                onChange={e => setInvoiceData(prev => ({ ...prev, due_date: e.target.value }))} 
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Anexar Nota Fiscal (PDF/Img)</Label>
+              <Input 
+                type="file" 
+                onChange={e => setInvoiceData(prev => ({ ...prev, invoice_file: e.target.files?.[0] || null }))} 
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Anexar Boleto (PDF/Img)</Label>
+              <Input 
+                type="file" 
+                onChange={e => setInvoiceData(prev => ({ ...prev, boleto_file: e.target.files?.[0] || null }))} 
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpenInvoice(false)}>Cancelar</Button>
+            <Button onClick={() => invoiceBoletim.mutate()} disabled={invoiceBoletim.isPending}>
+              {invoiceBoletim.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Receipt className="h-4 w-4 mr-2" />}
+              Gerar Faturamento
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

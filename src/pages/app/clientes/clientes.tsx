@@ -24,8 +24,8 @@ const clientSchema = z.object({
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   address: z.string().optional(),
   area_ha: z.coerce.number().min(0, 'Área inválida'),
-  default_price_per_ha: z.coerce.number().min(0),
-  payment_method: z.string().min(1, 'Selecione uma forma de pagamento'),
+  default_price_per_ha: z.coerce.number().min(0, 'Valor inválido'),
+  payment_method: z.string().optional(),
   payment_term_days: z.coerce.number().min(0, 'Prazo inválido'),
   notes: z.string().optional(),
 })

@@ -34,7 +34,7 @@ CREATE TABLE public.clients (
   area_ha FLOAT,
   default_price_per_ha DECIMAL,
   payment_method TEXT,
-  payment_term_days INT,
+  payment_term_days INT DEFAULT 0,
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -84,6 +84,9 @@ CREATE TABLE public.measurement_bulletins (
   commission_pct DECIMAL,
   km_total INT,
   pdf_url TEXT,
+  invoice_number TEXT,
+  invoice_url TEXT,
+  boleto_url TEXT,
   notes TEXT,
   approved_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
