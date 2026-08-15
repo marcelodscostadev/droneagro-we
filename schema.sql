@@ -47,6 +47,8 @@ CREATE TABLE public.service_orders (
   type TEXT NOT NULL, -- 'demo' or 'paid'
   status TEXT NOT NULL DEFAULT 'scheduled',
   scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  area_ha FLOAT,
+  price_per_ha DECIMAL,
   km_start INT,
   km_end INT,
   km_start_photo_url TEXT,
