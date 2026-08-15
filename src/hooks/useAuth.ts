@@ -11,11 +11,27 @@ export function useAuth() {
       const { data: { user }, error } = await supabase.auth.getUser()
       if (error || !user) return null
 
-      const { data: profile } = await supabase
-        .from('users')
+      let { data: profile } = await supabase
+        .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
+
+      // Self-healing: se o usuário existe no Auth mas não no Profiles, cria agora
+      if (!profile) {
+        const { data: newProfile } = await supabase
+          .from('profiles')
+          .insert([{
+            id: user.id,
+            name: user.user_metadata?.full_name || 'Administrador',
+            email: user.email,
+            role: 'admin'
+          }])
+          .select('*')
+          .single()
+        
+        profile = newProfile
+      }
 
       return profile
     },

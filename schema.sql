@@ -1,8 +1,17 @@
+-- Limpeza de tabelas (caso existam)
+DROP TABLE IF EXISTS public.transactions CASCADE;
+DROP TABLE IF EXISTS public.bulletin_expenses CASCADE;
+DROP TABLE IF EXISTS public.measurement_bulletins CASCADE;
+DROP TABLE IF EXISTS public.activities CASCADE;
+DROP TABLE IF EXISTS public.service_orders CASCADE;
+DROP TABLE IF EXISTS public.clients CASCADE;
+DROP TABLE IF EXISTS public.profiles CASCADE;
+
 -- Habilitar extensão para geração de UUID
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. Tabela de Usuários (estendendo a auth.users do Supabase)
-CREATE TABLE public.users (
+-- 1. Tabela de Perfis (substituindo a antiga "users" para evitar conflito com auth.users)
+CREATE TABLE public.profiles (
   id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
@@ -34,7 +43,7 @@ CREATE TABLE public.clients (
 CREATE TABLE public.service_orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
-  technician_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  technician_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   type TEXT NOT NULL, -- 'demo' or 'paid'
   status TEXT NOT NULL DEFAULT 'scheduled',
   scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -46,7 +55,7 @@ CREATE TABLE public.service_orders (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 4. Tabela de Atividades (registra inicio/fim e lat/lng da pulverização)
+-- 4. Tabela de Atividades
 CREATE TABLE public.activities (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   service_order_id UUID REFERENCES public.service_orders(id) ON DELETE CASCADE,
@@ -57,12 +66,12 @@ CREATE TABLE public.activities (
   hectares_sprayed FLOAT
 );
 
--- 5. Tabela de Boletins de Medição (gerada ao fim da OS)
+-- 5. Tabela de Boletins de Medição
 CREATE TABLE public.measurement_bulletins (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   service_order_id UUID REFERENCES public.service_orders(id) ON DELETE CASCADE,
   client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
-  technician_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  technician_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'pending',
   hectares_sprayed FLOAT,
   price_per_ha DECIMAL,
@@ -77,7 +86,7 @@ CREATE TABLE public.measurement_bulletins (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 6. Despesas do Boletim (combustível, deslocamento, etc)
+-- 6. Despesas do Boletim
 CREATE TABLE public.bulletin_expenses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   bulletin_id UUID REFERENCES public.measurement_bulletins(id) ON DELETE CASCADE,
@@ -87,10 +96,10 @@ CREATE TABLE public.bulletin_expenses (
   total_value DECIMAL NOT NULL
 );
 
--- 7. Transações Financeiras (Contas a Receber/Pagar/Comissões)
+-- 7. Transações Financeiras
 CREATE TABLE public.transactions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  type TEXT NOT NULL, -- 'income' (receita), 'expense' (despesa), 'commission' (comissão técnico)
+  type TEXT NOT NULL,
   category TEXT,
   description TEXT NOT NULL,
   amount DECIMAL NOT NULL,
@@ -99,16 +108,14 @@ CREATE TABLE public.transactions (
   paid_at DATE,
   status TEXT NOT NULL DEFAULT 'pending',
   bulletin_id UUID REFERENCES public.measurement_bulletins(id) ON DELETE SET NULL,
-  technician_id UUID REFERENCES public.users(id) ON DELETE SET NULL
+  technician_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL
 );
-
 
 -- ==========================================================
 -- POLÍTICAS DE SEGURANÇA (Row Level Security - RLS)
 -- ==========================================================
 
--- Habilitar RLS em todas as tabelas
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
@@ -116,21 +123,10 @@ ALTER TABLE public.measurement_bulletins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bulletin_expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 
--- Por enquanto, vamos criar políticas permissivas para usuários autenticados
--- (Posteriormente podemos restringir baseado na role 'admin' vs 'technician')
-
-CREATE POLICY "Acesso total para autenticados em users" ON public.users FOR ALL TO authenticated USING (true);
+CREATE POLICY "Acesso total para autenticados em profiles" ON public.profiles FOR ALL TO authenticated USING (true);
 CREATE POLICY "Acesso total para autenticados em clients" ON public.clients FOR ALL TO authenticated USING (true);
 CREATE POLICY "Acesso total para autenticados em service_orders" ON public.service_orders FOR ALL TO authenticated USING (true);
 CREATE POLICY "Acesso total para autenticados em activities" ON public.activities FOR ALL TO authenticated USING (true);
 CREATE POLICY "Acesso total para autenticados em measurement_bulletins" ON public.measurement_bulletins FOR ALL TO authenticated USING (true);
 CREATE POLICY "Acesso total para autenticados em bulletin_expenses" ON public.bulletin_expenses FOR ALL TO authenticated USING (true);
 CREATE POLICY "Acesso total para autenticados em transactions" ON public.transactions FOR ALL TO authenticated USING (true);
-
-
--- ==========================================================
--- STORAGE BUCKETS (Para fotos do painel/drone)
--- ==========================================================
--- Estes comandos são informativos. No Supabase, você precisa 
--- criar os buckets via Dashboard na aba "Storage".
--- Crie um bucket chamado 'os-photos' e torne-o "Public".
