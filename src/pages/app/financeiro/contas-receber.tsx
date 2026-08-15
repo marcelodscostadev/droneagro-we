@@ -1,0 +1,1 @@
+export { ContasReceberPage } from './financeiro'

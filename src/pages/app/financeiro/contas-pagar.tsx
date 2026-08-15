@@ -1,0 +1,1 @@
+export { ContasPagarPage } from './financeiro'
