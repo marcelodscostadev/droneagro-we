@@ -46,7 +46,8 @@ export function CadastrosFinanceirosPage() {
       const { error } = await supabase.from('cost_centers').insert([{ name }])
       if (error) throw error
     },
-    onSuccess: () => { toast.success('Centro de custo criado'); setCcName(''); queryClient.invalidateQueries({ queryKey: ['cost_centers'] }) }
+    onSuccess: () => { toast.success('Centro de custo criado'); setCcName(''); queryClient.invalidateQueries({ queryKey: ['cost_centers'] }) },
+    onError: (e: any) => toast.error('Erro ao adicionar Centro de Custo: ' + e.message)
   })
 
   const delCc = useMutation({
@@ -54,7 +55,8 @@ export function CadastrosFinanceirosPage() {
       const { error } = await supabase.from('cost_centers').delete().eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => { toast.success('Centro de custo removido'); queryClient.invalidateQueries({ queryKey: ['cost_centers'] }) }
+    onSuccess: () => { toast.success('Centro de custo removido'); queryClient.invalidateQueries({ queryKey: ['cost_centers'] }) },
+    onError: (e: any) => toast.error('Erro ao remover: ' + e.message)
   })
 
   const addCat = useMutation({
@@ -62,7 +64,8 @@ export function CadastrosFinanceirosPage() {
       const { error } = await supabase.from('financial_categories').insert([{ name, type }])
       if (error) throw error
     },
-    onSuccess: () => { toast.success('Categoria criada'); setCatName(''); queryClient.invalidateQueries({ queryKey: ['financial_categories'] }) }
+    onSuccess: () => { toast.success('Categoria criada'); setCatName(''); queryClient.invalidateQueries({ queryKey: ['financial_categories'] }) },
+    onError: (e: any) => toast.error('Erro ao adicionar Categoria: ' + e.message)
   })
 
   const delCat = useMutation({
@@ -70,7 +73,8 @@ export function CadastrosFinanceirosPage() {
       const { error } = await supabase.from('financial_categories').delete().eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => { toast.success('Categoria removida'); queryClient.invalidateQueries({ queryKey: ['financial_categories'] }) }
+    onSuccess: () => { toast.success('Categoria removida'); queryClient.invalidateQueries({ queryKey: ['financial_categories'] }) },
+    onError: (e: any) => toast.error('Erro ao remover: ' + e.message)
   })
 
   const saveSettings = useMutation({
@@ -78,7 +82,8 @@ export function CadastrosFinanceirosPage() {
       const { error } = await supabase.from('company_settings').upsert({ id: 1, initial_balance: balance })
       if (error) throw error
     },
-    onSuccess: () => { toast.success('Saldo inicial salvo'); queryClient.invalidateQueries({ queryKey: ['company_settings'] }) }
+    onSuccess: () => { toast.success('Saldo inicial salvo'); queryClient.invalidateQueries({ queryKey: ['company_settings'] }) },
+    onError: (e: any) => toast.error('Erro ao salvar saldo: ' + e.message)
   })
 
   return (

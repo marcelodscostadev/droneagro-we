@@ -28,6 +28,8 @@ const clientSchema = z.object({
   payment_method: z.string().optional(),
   payment_term_days: z.coerce.number().min(0, 'Prazo inválido'),
   notes: z.string().optional(),
+  lat: z.coerce.number().optional(),
+  lng: z.coerce.number().optional(),
 })
 
 type ClientFormData = z.infer<typeof clientSchema>
@@ -151,6 +153,16 @@ export function ClientesPage() {
                       <Label>Prazo de Pagamento (dias)</Label>
                       <Input {...register('payment_term_days')} type="number" placeholder="Ex: 30" />
                     </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Latitude (Opcional)</Label>
+                    <Input {...register('lat')} type="number" step="0.000001" placeholder="-12.345678" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Longitude (Opcional)</Label>
+                    <Input {...register('lng')} type="number" step="0.000001" placeholder="-55.678901" />
                   </div>
                 </div>
                 <div className="space-y-2">

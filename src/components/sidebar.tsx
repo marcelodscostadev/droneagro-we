@@ -14,6 +14,7 @@ import {
   Receipt,
   BadgeDollarSign,
   UserCog,
+  MapPin,
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
@@ -73,6 +74,7 @@ export const NAV_ITEMS: NavItem[] = [
       { label: 'Operacional', to: '/relatorios/operacional', icon: TrendingUp },
     ],
   },
+  { label: 'Mapa das Fazendas', to: '/mapa', icon: MapPin },
   { label: 'Configurações', to: '/configuracoes', icon: Settings, allowedRoles: ['admin'] },
 ]
 

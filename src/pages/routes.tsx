@@ -15,6 +15,8 @@ import { ComissoesPage } from './app/financeiro/comissoes'
 import { ApuracaoPage } from './app/financeiro/apuracao'
 import { CadastrosFinanceirosPage } from './app/financeiro/cadastros'
 import { FluxoCaixaPage } from './app/financeiro/fluxo-caixa'
+import { OperacionalPage } from './app/relatorios/operacional'
+import { MapaPage } from './app/mapa/mapa'
 
 export const router = createBrowserRouter([
   {
@@ -68,6 +70,14 @@ export const router = createBrowserRouter([
       {
         path: '/financeiro/fluxo-caixa',
         Component: () => <PrivateRoute allowedRoles={['admin']}><FluxoCaixaPage /></PrivateRoute>,
+      },
+      {
+        path: '/relatorios/operacional',
+        Component: () => <PrivateRoute><OperacionalPage /></PrivateRoute>,
+      },
+      {
+        path: '/mapa',
+        Component: () => <PrivateRoute><MapaPage /></PrivateRoute>,
       },
     ],
   },
