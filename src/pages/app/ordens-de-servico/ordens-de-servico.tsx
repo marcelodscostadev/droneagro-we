@@ -53,13 +53,37 @@ export function OrdensDeServico() {
   })
 
   const updateStatus = useMutation({
-    mutationFn: async ({ id, status, data }: { id: string, status: string, data?: UpdateFormData }) => {
+    mutationFn: async ({ id, status, data, os }: { id: string, status: string, data?: UpdateFormData, os?: any }) => {
       let updatePayload: any = { status }
       if (data) {
         updatePayload = { ...updatePayload, ...data }
       }
       const { error } = await supabase.from('service_orders').update(updatePayload).eq('id', id)
       if (error) throw error
+
+      if (status === 'finished' && os) {
+        const hectares = os.area_ha || 0
+        const price = os.price_per_ha || 0
+        const subtotal = hectares * price
+        
+        const { data: existing } = await supabase.from('measurement_bulletins').select('id').eq('service_order_id', id)
+        if (!existing || existing.length === 0) {
+          const km_total = (data?.km_end && data?.km_start) ? data.km_end - data.km_start : 0
+          await supabase.from('measurement_bulletins').insert([{
+            service_order_id: id,
+            client_id: os.client_id,
+            technician_id: os.technician_id,
+            status: 'pending',
+            hectares_sprayed: hectares,
+            price_per_ha: price,
+            subtotal: subtotal,
+            total_value: subtotal,
+            commission_pct: 10,
+            commission_value: subtotal * 0.1,
+            km_total: km_total
+          }])
+        }
+      }
     },
     onSuccess: () => {
       toast.success('OS atualizada com sucesso!')
@@ -88,7 +112,7 @@ export function OrdensDeServico() {
         toast.error('Preencha o KM Inicial e Final para finalizar a OS.')
         return
       }
-      updateStatus.mutate({ id: selectedOs.id, status: newStatus, data })
+      updateStatus.mutate({ id: selectedOs.id, status: newStatus, data, os: selectedOs })
     })()
   }
 
@@ -240,7 +264,7 @@ export function OrdensDeServico() {
                       type="button" 
                       variant="outline" 
                       className="mt-2" 
-                      onClick={() => handleSubmit((data) => updateStatus.mutate({ id: selectedOs.id, status: selectedOs.status, data }))()} 
+                      onClick={() => handleSubmit((data) => updateStatus.mutate({ id: selectedOs.id, status: selectedOs.status, data, os: selectedOs }))()} 
                       disabled={updateStatus.isPending}
                     >
                       Apenas Salvar Dados

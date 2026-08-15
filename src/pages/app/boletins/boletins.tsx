@@ -1,5 +1,5 @@
-import { FileBarChart, ChevronDown, ChevronUp, FileDown, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/card'
+import { FileBarChart, ChevronDown, ChevronUp, FileDown, CheckCircle, XCircle, Plus, Trash2, Edit } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,32 +7,17 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Fragment, useState } from 'react'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-
-const MOCK_BOLETINS = [
-  {
-    id: 'BM-0042', os_number: 'OS-0042', status: 'pending',
-    client_name: 'Fazenda Boa Vista', technician_name: 'João Silva', commission_pct: 10,
-    date: '2026-08-15', hectares: 45, price_per_ha: 35, subtotal: 1575, total_value: 1490,
-    commission_value: 149, km_total: 84,
-    payment_method: 'PIX', payment_term_days: 30,
-    expenses: [{ id: 'e1', description: 'Deslocamento', quantity: 1, unit_value: 85, total_value: 85 }],
-    km_start_photo: 'https://placehold.co/200x120/1a2e1a/4ade80?text=KM+inicial',
-    km_end_photo: 'https://placehold.co/200x120/1a2e1a/4ade80?text=KM+final',
-  },
-  {
-    id: 'BM-0040', os_number: 'OS-0040', status: 'approved',
-    client_name: 'Rancho das Flores', technician_name: 'João Silva', commission_pct: 10,
-    date: '2026-08-14', hectares: 80, price_per_ha: 35, subtotal: 2800, total_value: 2800,
-    commission_value: 280, km_total: 120,
-    payment_method: 'Boleto', payment_term_days: 45,
-    expenses: [],
-    km_start_photo: null, km_end_photo: null,
-  },
-]
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+import { z } from 'zod'
+import { useForm, Controller } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Loader2 } from 'lucide-react'
 
 const STATUS_MAP: Record<string, { label: string; variant: 'warning' | 'success' | 'destructive' | 'outline' | 'secondary' }> = {
   pending: { label: 'Pendente', variant: 'warning' },
@@ -41,22 +26,161 @@ const STATUS_MAP: Record<string, { label: string; variant: 'warning' | 'success'
   invoiced: { label: 'Faturado', variant: 'outline' },
 }
 
+const editSchema = z.object({
+  hectares_sprayed: z.coerce.number().min(0),
+  price_per_ha: z.coerce.number().min(0),
+  commission_pct: z.coerce.number().min(0).max(100),
+})
+
+type EditFormData = z.infer<typeof editSchema>
+
 export function BoletinsPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [statusFilter, setStatusFilter] = useState('ALL')
+  const [openEdit, setOpenEdit] = useState(false)
+  const [selectedBoletim, setSelectedBoletim] = useState<any>(null)
+  
+  // Expense Form state
+  const [expDesc, setExpDesc] = useState('')
+  const [expQty, setExpQty] = useState('1')
+  const [expVal, setExpVal] = useState('')
 
-  const filtered = statusFilter === 'ALL' ? MOCK_BOLETINS : MOCK_BOLETINS.filter(b => b.status === statusFilter)
+  const queryClient = useQueryClient()
+
+  const { data: boletins = [], isLoading, isFetching } = useQuery({
+    queryKey: ['boletins'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('measurement_bulletins')
+        .select(`
+          *,
+          client:clients(name),
+          technician:profiles(name),
+          service_order:service_orders(os_number, scheduled_at),
+          expenses:bulletin_expenses(*)
+        `)
+        .order('created_at', { ascending: false })
+      
+      if (error) throw error
+      return data
+    }
+  })
+
+  const { register, handleSubmit, reset, watch, setValue, formState: { isSubmitting } } = useForm<EditFormData>({
+    resolver: zodResolver(editSchema)
+  })
+
+  // Watch for dynamic calculation
+  const wHectares = watch('hectares_sprayed')
+  const wPrice = watch('price_per_ha')
+  const wPct = watch('commission_pct')
+  
+  const currentSubtotal = (wHectares || 0) * (wPrice || 0)
+  const currentCommission = currentSubtotal * ((wPct || 0) / 100)
+
+  const updateBoletim = useMutation({
+    mutationFn: async (data: EditFormData) => {
+      const subtotal = data.hectares_sprayed * data.price_per_ha
+      const comissao = subtotal * (data.commission_pct / 100)
+      
+      // Recalculate total_value based on expenses
+      const expensesTotal = selectedBoletim.expenses?.reduce((acc: number, curr: any) => acc + Number(curr.total_value), 0) || 0
+      const total_value = subtotal + expensesTotal
+
+      const { error } = await supabase.from('measurement_bulletins')
+        .update({
+          hectares_sprayed: data.hectares_sprayed,
+          price_per_ha: data.price_per_ha,
+          commission_pct: data.commission_pct,
+          subtotal: subtotal,
+          commission_value: comissao,
+          total_value: total_value
+        })
+        .eq('id', selectedBoletim.id)
+      
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Boletim atualizado com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['boletins'] })
+      setOpenEdit(false)
+    }
+  })
+
+  const changeStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: string, status: string }) => {
+      const { error } = await supabase.from('measurement_bulletins').update({ status }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_, variables) => {
+      toast.success(`Boletim marcado como ${STATUS_MAP[variables.status].label}!`)
+      queryClient.invalidateQueries({ queryKey: ['boletins'] })
+    }
+  })
+
+  const addExpense = useMutation({
+    mutationFn: async (boletimId: string) => {
+      const qty = Number(expQty)
+      const val = Number(expVal)
+      const tot = qty * val
+      const { error } = await supabase.from('bulletin_expenses').insert([{
+        bulletin_id: boletimId,
+        description: expDesc,
+        quantity: qty,
+        unit_value: val,
+        total_value: tot
+      }])
+      if (error) throw error
+
+      // Also update boletim total_value
+      const b = boletins.find((x: any) => x.id === boletimId)
+      if (b) {
+        await supabase.from('measurement_bulletins').update({
+          total_value: Number(b.total_value) + tot
+        }).eq('id', boletimId)
+      }
+    },
+    onSuccess: () => {
+      toast.success('Despesa adicionada!')
+      queryClient.invalidateQueries({ queryKey: ['boletins'] })
+      setExpDesc('')
+      setExpQty('1')
+      setExpVal('')
+    }
+  })
+
+  const deleteExpense = useMutation({
+    mutationFn: async ({ expId, boletimId, totVal }: { expId: string, boletimId: string, totVal: number }) => {
+      const { error } = await supabase.from('bulletin_expenses').delete().eq('id', expId)
+      if (error) throw error
+
+      const b = boletins.find((x: any) => x.id === boletimId)
+      if (b) {
+        await supabase.from('measurement_bulletins').update({
+          total_value: Number(b.total_value) - totVal
+        }).eq('id', boletimId)
+      }
+    },
+    onSuccess: () => {
+      toast.success('Despesa removida!')
+      queryClient.invalidateQueries({ queryKey: ['boletins'] })
+    }
+  })
+
+  const filtered = statusFilter === 'ALL' ? boletins : boletins.filter((b: any) => b.status === statusFilter)
 
   function toggleRow(id: string) {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }))
   }
 
-  function handleApprove(id: string) {
-    toast.success(`Boletim ${id} aprovado! Conta a receber e comissão gerados.`)
-  }
-
-  function handleReject(id: string) {
-    toast.error(`Boletim ${id} rejeitado.`)
+  function handleOpenEdit(b: any) {
+    setSelectedBoletim(b)
+    reset({
+      hectares_sprayed: b.hectares_sprayed || 0,
+      price_per_ha: b.price_per_ha || 0,
+      commission_pct: b.commission_pct || 10
+    })
+    setOpenEdit(true)
   }
 
   return (
@@ -65,8 +189,10 @@ export function BoletinsPage() {
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-primary/10"><FileBarChart className="h-6 w-6 text-primary" /></div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Boletins de Medição</h1>
-            <p className="text-sm text-muted-foreground">Aprovação de medições e geração de documentos</p>
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              Boletins de Medição {isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            </h1>
+            <p className="text-sm text-muted-foreground">Aprovação de medições e faturamento</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -92,7 +218,7 @@ export function BoletinsPage() {
                 <TableHead>Boletim</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Técnico</TableHead>
-                <TableHead>Data</TableHead>
+                <TableHead>Data OS</TableHead>
                 <TableHead className="text-center">Hectares</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Comissão</TableHead>
@@ -101,10 +227,23 @@ export function BoletinsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(b => {
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="h-24 text-center">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                    Nenhum boletim encontrado.
+                  </TableCell>
+                </TableRow>
+              ) : filtered.map((b: any) => {
                 const isExpanded = expandedRows[b.id]
-                const s = STATUS_MAP[b.status]
+                const s = STATUS_MAP[b.status] || STATUS_MAP['pending']
                 const isPending = b.status === 'pending'
+                const osNumber = b.service_order?.os_number ? `OS-${b.service_order.os_number.toString().padStart(4, '0')}` : 'OS-...'
 
                 return (
                   <Fragment key={b.id}>
@@ -115,13 +254,13 @@ export function BoletinsPage() {
                         </Button>
                       </TableCell>
                       <TableCell>
-                        <div className="font-bold text-primary">{b.id}</div>
-                        <div className="text-xs text-muted-foreground">{b.os_number}</div>
+                        <div className="font-bold text-primary" title={b.id}>BM-{b.id.substring(0, 4)}</div>
+                        <div className="text-xs text-muted-foreground">{osNumber}</div>
                       </TableCell>
-                      <TableCell className="font-medium">{b.client_name}</TableCell>
-                      <TableCell className="text-muted-foreground">{b.technician_name}</TableCell>
-                      <TableCell>{formatDate(b.date)}</TableCell>
-                      <TableCell className="text-center font-bold">{b.hectares} ha</TableCell>
+                      <TableCell className="font-medium">{b.client?.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{b.technician?.name || '—'}</TableCell>
+                      <TableCell>{b.service_order?.scheduled_at ? formatDate(b.service_order.scheduled_at) : '—'}</TableCell>
+                      <TableCell className="text-center font-bold">{b.hectares_sprayed || 0} ha</TableCell>
                       <TableCell className="text-right font-bold text-lg">{formatCurrency(b.total_value)}</TableCell>
                       <TableCell className="text-right text-muted-foreground">{formatCurrency(b.commission_value)}</TableCell>
                       <TableCell className="text-center"><Badge variant={s.variant}>{s.label}</Badge></TableCell>
@@ -129,10 +268,13 @@ export function BoletinsPage() {
                         <div className="flex items-center justify-end gap-1">
                           {isPending && (
                             <>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" onClick={() => handleApprove(b.id)}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenEdit(b)} title="Editar Valores">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => changeStatus.mutate({ id: b.id, status: 'approved' })} title="Aprovar">
                                 <CheckCircle className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleReject(b.id)}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => changeStatus.mutate({ id: b.id, status: 'rejected' })} title="Rejeitar">
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             </>
@@ -155,15 +297,12 @@ export function BoletinsPage() {
                               </h3>
                               <div className="rounded-lg border bg-card p-4 space-y-3 text-sm">
                                 {[
-                                  ['Cliente', b.client_name],
-                                  ['Forma de Pgto', b.payment_method],
-                                  ['Vencimento', `${b.payment_term_days} dias após aprovação`],
-                                  ['KM Rodado', `${b.km_total} km`],
-                                  ['Hectares Pulverizados', `${b.hectares} ha`],
+                                  ['KM Rodado', `${b.km_total || 0} km`],
+                                  ['Hectares Pulverizados', `${b.hectares_sprayed || 0} ha`],
                                   ['Preço por Hectare', formatCurrency(b.price_per_ha)],
-                                  ['Subtotal', formatCurrency(b.subtotal)],
+                                  ['Subtotal do Serviço', formatCurrency(b.subtotal)],
                                 ].map(([k, v]) => (
-                                  <div key={k} className="flex justify-between items-center">
+                                  <div key={k as string} className="flex justify-between items-center">
                                     <span className="text-muted-foreground">{k}:</span>
                                     <span className="font-medium">{v}</span>
                                   </div>
@@ -174,33 +313,15 @@ export function BoletinsPage() {
                                   <span className="text-primary">{formatCurrency(b.total_value)}</span>
                                 </div>
                                 <div className="flex justify-between items-center text-muted-foreground">
-                                  <span>Comissão do Técnico ({b.commission_pct}%):</span>
+                                  <span>Comissão do Técnico ({b.commission_pct || 0}%):</span>
                                   <span className="font-semibold">{formatCurrency(b.commission_value)}</span>
                                 </div>
                               </div>
-
-                              {/* KM Photos */}
-                              {(b.km_start_photo || b.km_end_photo) && (
-                                <div className="grid grid-cols-2 gap-3">
-                                  {b.km_start_photo && (
-                                    <div className="space-y-1">
-                                      <p className="text-xs text-muted-foreground font-medium">KM Inicial</p>
-                                      <img src={b.km_start_photo} alt="KM inicial" className="rounded-lg border w-full object-cover" />
-                                    </div>
-                                  )}
-                                  {b.km_end_photo && (
-                                    <div className="space-y-1">
-                                      <p className="text-xs text-muted-foreground font-medium">KM Final</p>
-                                      <img src={b.km_end_photo} alt="KM final" className="rounded-lg border w-full object-cover" />
-                                    </div>
-                                  )}
-                                </div>
-                              )}
                             </div>
 
                             {/* Right: expenses */}
                             <div className="space-y-4">
-                              <h3 className="font-semibold text-sm">Despesas e Descontos</h3>
+                              <h3 className="font-semibold text-sm">Despesas e Adicionais</h3>
                               <div className="rounded-lg border bg-card">
                                 <Table>
                                   <TableHeader>
@@ -213,7 +334,7 @@ export function BoletinsPage() {
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {b.expenses.length > 0 ? b.expenses.map(exp => (
+                                    {b.expenses && b.expenses.length > 0 ? b.expenses.map((exp: any) => (
                                       <TableRow key={exp.id}>
                                         <TableCell className="py-2">{exp.description}</TableCell>
                                         <TableCell className="text-right py-2">{exp.quantity}</TableCell>
@@ -221,7 +342,7 @@ export function BoletinsPage() {
                                         <TableCell className="text-right py-2 font-medium">{formatCurrency(exp.total_value)}</TableCell>
                                         <TableCell className="py-2">
                                           {isPending && (
-                                            <Button variant="ghost" size="icon" className="h-6 w-6">
+                                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteExpense.mutate({ expId: exp.id, boletimId: b.id, totVal: Number(exp.total_value) })}>
                                               <Trash2 className="h-3 w-3 text-destructive" />
                                             </Button>
                                           )}
@@ -240,12 +361,14 @@ export function BoletinsPage() {
 
                               {isPending && (
                                 <div className="space-y-2 p-3 bg-muted/30 rounded-lg border border-border/50">
-                                  <Label className="text-xs font-semibold">Adicionar Despesa / Desconto</Label>
+                                  <Label className="text-xs font-semibold">Adicionar Despesa / Adicional</Label>
                                   <div className="flex gap-2">
-                                    <Input placeholder="Descrição" className="h-8 text-xs flex-1" />
-                                    <Input placeholder="Qtd" className="h-8 text-xs w-16 text-right" />
-                                    <Input placeholder="Valor" className="h-8 text-xs w-24 text-right" />
-                                    <Button size="sm" className="h-8"><Plus className="h-3 w-3" /></Button>
+                                    <Input placeholder="Ex: Deslocamento" className="h-8 text-xs flex-1" value={expDesc} onChange={e => setExpDesc(e.target.value)} />
+                                    <Input placeholder="Qtd" type="number" className="h-8 text-xs w-16 text-right" value={expQty} onChange={e => setExpQty(e.target.value)} />
+                                    <Input placeholder="Valor (R$)" type="number" className="h-8 text-xs w-24 text-right" value={expVal} onChange={e => setExpVal(e.target.value)} />
+                                    <Button size="sm" className="h-8" disabled={!expDesc || !expVal || addExpense.isPending} onClick={() => addExpense.mutate(b.id)}>
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
                                   </div>
                                 </div>
                               )}
@@ -261,6 +384,44 @@ export function BoletinsPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={openEdit} onOpenChange={setOpenEdit}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Valores da Medição</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit((d) => updateBoletim.mutate(d))} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Hectares Efetivamente Pulverizados</Label>
+              <Input {...register('hectares_sprayed')} type="number" step="0.1" />
+            </div>
+            <div className="space-y-2">
+              <Label>Preço por Hectare (R$)</Label>
+              <Input {...register('price_per_ha')} type="number" step="0.01" />
+            </div>
+            <div className="space-y-2">
+              <Label>Comissão do Técnico (%)</Label>
+              <Input {...register('commission_pct')} type="number" step="0.1" />
+            </div>
+
+            <div className="bg-muted p-3 rounded-md text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Novo Subtotal:</span>
+                <span className="font-semibold">{formatCurrency(currentSubtotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Nova Comissão:</span>
+                <span className="font-semibold text-primary">{formatCurrency(currentCommission)}</span>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpenEdit(false)}>Cancelar</Button>
+              <Button type="submit" disabled={isSubmitting || updateBoletim.isPending}>Salvar Alterações</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
