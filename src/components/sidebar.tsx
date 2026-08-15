@@ -61,7 +61,9 @@ export const NAV_ITEMS: NavItem[] = [
       { label: 'Contas a Receber', to: '/financeiro/receber', icon: TrendingUp },
       { label: 'Contas a Pagar', to: '/financeiro/pagar', icon: Receipt },
       { label: 'Comissões', to: '/financeiro/comissoes', icon: BadgeDollarSign },
-      { label: 'Apuração de Resultado', to: '/financeiro/apuracao', icon: BarChart3 },
+      { label: 'Apuração de Resultado (DRE)', to: '/financeiro/apuracao', icon: BarChart3 },
+      { label: 'Fluxo de Caixa', to: '/financeiro/fluxo-caixa', icon: BarChart3 },
+      { label: 'Cadastros Financeiros', to: '/financeiro/cadastros', icon: UserCog },
     ],
   },
   {

@@ -99,19 +99,35 @@ CREATE TABLE public.bulletin_expenses (
   total_value DECIMAL NOT NULL
 );
 
--- 7. Transações Financeiras
+-- 6. Transações Financeiras (Contas a Pagar/Receber)
+CREATE TABLE public.cost_centers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL
+);
+
+CREATE TABLE public.financial_categories (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  type TEXT NOT NULL -- 'income' or 'expense'
+);
+
+CREATE TABLE public.company_settings (
+  id INT PRIMARY KEY DEFAULT 1,
+  initial_balance DECIMAL DEFAULT 0
+);
+
 CREATE TABLE public.transactions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  type TEXT NOT NULL,
-  category TEXT,
+  type TEXT NOT NULL, -- 'income' or 'expense'
   description TEXT NOT NULL,
   amount DECIMAL NOT NULL,
-  payment_method TEXT,
-  due_date DATE,
-  paid_at DATE,
-  status TEXT NOT NULL DEFAULT 'pending',
+  date DATE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'paid', -- 'pending' or 'paid'
   bulletin_id UUID REFERENCES public.measurement_bulletins(id) ON DELETE SET NULL,
-  technician_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL
+  technician_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  category_id UUID REFERENCES public.financial_categories(id),
+  cost_center_id UUID REFERENCES public.cost_centers(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- ==========================================================

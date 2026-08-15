@@ -108,9 +108,35 @@ export function BoletinsPage() {
   })
 
   const changeStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string, status: string }) => {
+    mutationFn: async ({ id, status, total, comissao, tecnicoId, clientName }: { id: string, status: string, total: number, comissao: number, tecnicoId: string, clientName: string }) => {
       const { error } = await supabase.from('measurement_bulletins').update({ status }).eq('id', id)
       if (error) throw error
+
+      if (status === 'approved') {
+        const today = new Date().toISOString().split('T')[0]
+        // Insert Conta a Receber (Income)
+        await supabase.from('transactions').insert([{
+          type: 'income',
+          description: `Serviço Prestado - ${clientName}`,
+          amount: total,
+          date: today,
+          status: 'pending',
+          bulletin_id: id
+        }])
+
+        // Insert Conta a Pagar (Commission)
+        if (comissao > 0 && tecnicoId) {
+          await supabase.from('transactions').insert([{
+            type: 'expense',
+            description: `Comissão - Boletim BM-${id.substring(0,4)}`,
+            amount: comissao,
+            date: today,
+            status: 'pending',
+            bulletin_id: id,
+            technician_id: tecnicoId
+          }])
+        }
+      }
     },
     onSuccess: (_, variables) => {
       toast.success(`Boletim marcado como ${STATUS_MAP[variables.status].label}!`)
@@ -271,10 +297,10 @@ export function BoletinsPage() {
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleOpenEdit(b)} title="Editar Valores">
                                 <Edit className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => changeStatus.mutate({ id: b.id, status: 'approved' })} title="Aprovar">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => changeStatus.mutate({ id: b.id, status: 'approved', total: b.total_value, comissao: b.commission_value, tecnicoId: b.technician_id, clientName: b.client?.name || 'Cliente' })} title="Aprovar">
                                 <CheckCircle className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => changeStatus.mutate({ id: b.id, status: 'rejected' })} title="Rejeitar">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => changeStatus.mutate({ id: b.id, status: 'rejected', total: 0, comissao: 0, tecnicoId: '', clientName: '' })} title="Rejeitar">
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             </>
