@@ -23,10 +23,10 @@ const clientSchema = z.object({
   phone: z.string().optional(),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
   address: z.string().optional(),
-  area_ha: z.coerce.number().min(0, 'Área inválida').optional().default(0),
-  default_price_per_ha: z.coerce.number().min(0).optional().default(0),
+  area_ha: z.coerce.number().min(0, 'Área inválida'),
+  default_price_per_ha: z.coerce.number().min(0),
   payment_method: z.string().min(1, 'Selecione uma forma de pagamento'),
-  payment_term_days: z.coerce.number().min(0, 'Prazo inválido').optional().default(0),
+  payment_term_days: z.coerce.number().min(0, 'Prazo inválido'),
   notes: z.string().optional(),
 })
 
