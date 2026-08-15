@@ -42,6 +42,7 @@ CREATE TABLE public.clients (
 -- 3. Tabela de Ordens de Serviço
 CREATE TABLE public.service_orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  os_number SERIAL,
   client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
   technician_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   type TEXT NOT NULL, -- 'demo' or 'paid'
