@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -39,6 +39,7 @@ type AgendamentoFormData = z.infer<typeof agendamentoSchema>
 
 export function AgendamentosPage() {
   const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const { data: clients = [] } = useQuery({
@@ -77,29 +78,66 @@ export function AgendamentosPage() {
     defaultValues: { type: 'paid', area_ha: 0, price_per_ha: 0 }
   })
 
-  const createOrder = useMutation({
+  const saveOrder = useMutation({
     mutationFn: async (data: AgendamentoFormData) => {
-      // Converte a data local (do datetime-local) para ISO que o Postgres entende
       const isoDate = new Date(data.scheduled_at).toISOString()
-      const { error } = await supabase.from('service_orders').insert([{ ...data, scheduled_at: isoDate }])
-      if (error) throw error
+      const payload = { ...data, scheduled_at: isoDate }
+      
+      if (editingId) {
+        const { error } = await supabase.from('service_orders').update(payload).eq('id', editingId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('service_orders').insert([payload])
+        if (error) throw error
+      }
     },
     onSuccess: () => {
-      toast.success('Agendamento criado com sucesso!')
+      toast.success(editingId ? 'Agendamento atualizado com sucesso!' : 'Agendamento criado com sucesso!')
       queryClient.invalidateQueries({ queryKey: ['agendamentos'] })
+      queryClient.invalidateQueries({ queryKey: ['service_orders'] })
       setOpen(false)
       reset()
     },
     onError: (error: any) => {
-      toast.error('Erro ao agendar: ' + error.message)
+      toast.error('Erro ao salvar agendamento: ' + error.message)
     }
   })
 
   const handleClientChange = (clientId: string) => {
+    if (editingId) return // Não altera o valor automaticamente se estiver editando
     const client = clients.find(c => c.id === clientId)
     if (client && client.default_price_per_ha) {
       setValue('price_per_ha', client.default_price_per_ha)
     }
+  }
+
+  const openNew = () => {
+    setEditingId(null)
+    reset({ type: 'paid', area_ha: 0, price_per_ha: 0, scheduled_at: '', client_id: '', technician_id: '', notes: '' })
+    setOpen(true)
+  }
+
+  const openEdit = (ag: any) => {
+    setEditingId(ag.id)
+    // Para o input datetime-local o formato deve ser YYYY-MM-DDThh:mm
+    let localDate = ''
+    if (ag.scheduled_at) {
+      // ajusta timezone local
+      const d = new Date(ag.scheduled_at)
+      d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
+      localDate = d.toISOString().slice(0, 16)
+    }
+
+    reset({
+      client_id: ag.client_id || '',
+      technician_id: ag.technician_id || '',
+      type: ag.type || 'paid',
+      scheduled_at: localDate,
+      area_ha: ag.area_ha || 0,
+      price_per_ha: ag.price_per_ha || 0,
+      notes: ag.notes || '',
+    })
+    setOpen(true)
   }
 
   return (
@@ -120,13 +158,12 @@ export function AgendamentosPage() {
           </Button>
           <Button variant="outline"><Filter className="h-4 w-4 mr-2" />Filtros</Button>
           
+          <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Agendamento</Button>
+          
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button><Plus className="h-4 w-4 mr-2" />Novo Agendamento</Button>
-            </DialogTrigger>
             <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>Criar Agendamento</DialogTitle></DialogHeader>
-              <form onSubmit={handleSubmit((d) => createOrder.mutate(d))} className="space-y-4 py-2">
+              <DialogHeader><DialogTitle>{editingId ? 'Editar Agendamento' : 'Criar Agendamento'}</DialogTitle></DialogHeader>
+              <form onSubmit={handleSubmit((d) => saveOrder.mutate(d))} className="space-y-4 py-2">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2 col-span-2 sm:col-span-1">
                     <Label>Cliente *</Label>
@@ -134,7 +171,7 @@ export function AgendamentosPage() {
                       name="client_id"
                       control={control}
                       render={({ field }) => (
-                        <Select onValueChange={(val) => { field.onChange(val); handleClientChange(val); }} defaultValue={field.value}>
+                        <Select onValueChange={(val) => { field.onChange(val); handleClientChange(val); }} value={field.value}>
                           <SelectTrigger><SelectValue placeholder="Selecione o cliente" /></SelectTrigger>
                           <SelectContent>
                             {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
@@ -151,7 +188,7 @@ export function AgendamentosPage() {
                       name="technician_id"
                       control={control}
                       render={({ field }) => (
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <SelectTrigger><SelectValue placeholder="Selecione o técnico" /></SelectTrigger>
                           <SelectContent>
                             {technicians.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
@@ -174,7 +211,7 @@ export function AgendamentosPage() {
                       name="type"
                       control={control}
                       render={({ field }) => (
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="paid">Serviço Pago</SelectItem>
@@ -208,9 +245,9 @@ export function AgendamentosPage() {
 
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-                  <Button type="submit" disabled={isSubmitting || createOrder.isPending}>
-                    {isSubmitting || createOrder.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Agendar Serviço
+                  <Button type="submit" disabled={isSubmitting || saveOrder.isPending}>
+                    {isSubmitting || saveOrder.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {editingId ? 'Salvar Alterações' : 'Agendar Serviço'}
                   </Button>
                 </DialogFooter>
               </form>
@@ -229,12 +266,12 @@ export function AgendamentosPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Nº OS</TableHead>
                 <TableHead>Data / Hora</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Técnico</TableHead>
                 <TableHead className="text-center">Tipo</TableHead>
                 <TableHead className="text-center">Ha Previsto</TableHead>
-                <TableHead className="text-center">Valor / ha</TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -257,6 +294,9 @@ export function AgendamentosPage() {
                   const s = STATUS_MAP[ag.status] || STATUS_MAP['scheduled']
                   return (
                     <TableRow key={ag.id}>
+                      <TableCell className="font-bold text-muted-foreground text-xs">
+                        {ag.os_number ? `OS-${ag.os_number.toString().padStart(4, '0')}` : '—'}
+                      </TableCell>
                       <TableCell>
                         <div className="font-semibold text-primary">{formatDate(ag.scheduled_at)}</div>
                         <div className="text-xs text-muted-foreground">{new Date(ag.scheduled_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
@@ -265,17 +305,16 @@ export function AgendamentosPage() {
                       <TableCell className="text-muted-foreground">{ag.technician?.name || 'Não atribuído'}</TableCell>
                       <TableCell className="text-center">
                         <Badge variant={ag.type === 'paid' ? 'default' : 'outline'}>
-                          {ag.type === 'paid' ? 'Serviço Pago' : 'Demonstração'}
+                          {ag.type === 'paid' ? 'Pago' : 'Demo'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center font-bold">
                         {ag.area_ha ? `${ag.area_ha.toLocaleString('pt-BR')} ha` : '—'}
                       </TableCell>
-                      <TableCell className="text-center font-medium">
-                        {ag.price_per_ha ? `R$ ${ag.price_per_ha.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'}
-                      </TableCell>
                       <TableCell className="text-center"><Badge variant={s.variant}>{s.label}</Badge></TableCell>
-                      <TableCell className="text-right"><Button variant="ghost" size="sm">Ver OS</Button></TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(ag)}>Editar</Button>
+                      </TableCell>
                     </TableRow>
                   )
                 })
