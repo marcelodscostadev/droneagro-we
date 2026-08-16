@@ -148,6 +148,13 @@ export function ClientesPage() {
     setOpen(true)
   }
 
+  const handleNewClient = () => {
+    setEditingClient(null)
+    setLogoFile(null)
+    reset({ name: '', phone: '', email: '', address: '', area_ha: 0, default_price_per_ha: 0, payment_method: 'pix', payment_term_days: 0, notes: '', lat: undefined, lng: undefined, person_type: 'PF', document_number: '' })
+    setOpen(true)
+  }
+
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen)
     if (!isOpen) {
@@ -175,9 +182,9 @@ export function ClientesPage() {
           <Button variant="outline" size="icon" onClick={() => queryClient.invalidateQueries({ queryKey: ['clients'] })}>
             <RefreshCcw className="h-4 w-4" />
           </Button>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogTrigger asChild>
-              <Button onClick={() => handleOpenChange(true)}><Plus className="h-4 w-4 mr-2" />Novo Cliente</Button>
+              <Button onClick={handleNewClient}><Plus className="h-4 w-4 mr-2" />Novo Cliente</Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{editingClient ? 'Editar Cliente' : 'Cadastrar Cliente'}</DialogTitle></DialogHeader>
