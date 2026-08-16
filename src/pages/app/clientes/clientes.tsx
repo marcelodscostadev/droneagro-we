@@ -38,6 +38,8 @@ const clientSchema = z.object({
     const str = String(v).replace(',', '.');
     return Number(str);
   }),
+  person_type: z.enum(['PF', 'PJ']).optional().or(z.literal('')),
+  document_number: z.string().optional(),
 })
 
 type ClientFormData = z.infer<typeof clientSchema>
@@ -45,6 +47,7 @@ type ClientFormData = z.infer<typeof clientSchema>
 export function ClientesPage() {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
+  const [logoFile, setLogoFile] = useState<File | null>(null)
   const queryClient = useQueryClient()
 
   const { data: clients = [], isLoading, isFetching } = useQuery({
@@ -60,20 +63,34 @@ export function ClientesPage() {
     }
   })
 
-  const { register, handleSubmit, control, reset, formState: { errors, isSubmitting } } = useForm<ClientFormData>({
+  const { register, handleSubmit, control, watch, reset, formState: { errors, isSubmitting } } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
-    defaultValues: { payment_method: 'pix', payment_term_days: 0, area_ha: 0, default_price_per_ha: 0 }
+    defaultValues: { payment_method: 'pix', payment_term_days: 0, area_ha: 0, default_price_per_ha: 0, person_type: 'PF' }
   })
+
+  const personType = watch('person_type')
 
   const createClient = useMutation({
     mutationFn: async (data: ClientFormData) => {
-      const { error } = await supabase.from('clients').insert([data])
+      let logo_url = null
+      
+      if (logoFile) {
+        const fileExt = logoFile.name.split('.').pop()
+        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('attachments').upload(`logos/${fileName}`, logoFile)
+        if (uploadError) throw uploadError
+        
+        logo_url = supabase.storage.from('attachments').getPublicUrl(`logos/${fileName}`).data.publicUrl
+      }
+
+      const { error } = await supabase.from('clients').insert([{ ...data, logo_url }])
       if (error) throw error
     },
     onSuccess: () => {
       toast.success('Cliente cadastrado com sucesso!')
       queryClient.invalidateQueries({ queryKey: ['clients'] })
       setOpen(false)
+      setLogoFile(null)
       reset()
     },
     onError: (error: any) => {
@@ -112,6 +129,28 @@ export function ClientesPage() {
                     <Input {...register('name')} placeholder="Ex: Fazenda Boa Vista" />
                     {errors.name && <p className="text-destructive text-xs">{errors.name.message}</p>}
                   </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Tipo de Cliente</Label>
+                    <Controller
+                      name="person_type"
+                      control={control}
+                      render={({ field }) => (
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PF">Pessoa Física (PF)</SelectItem>
+                            <SelectItem value="PJ">Pessoa Jurídica (PJ)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{personType === 'PJ' ? 'CNPJ' : 'CPF'}</Label>
+                    <Input {...register('document_number')} placeholder={personType === 'PJ' ? "00.000.000/0000-00" : "000.000.000-00"} />
+                  </div>
+
                   <div className="space-y-2">
                     <Label>Telefone / WhatsApp</Label>
                     <Input {...register('phone')} placeholder="(65) 99999-0000" />
@@ -124,6 +163,11 @@ export function ClientesPage() {
                   <div className="space-y-2 col-span-2">
                     <Label>Endereço / Propriedade</Label>
                     <Input {...register('address')} placeholder="Rod. MT-130, Km 45..." />
+                  </div>
+                  <div className="space-y-2 col-span-2">
+                    <Label>Logomarca (Opcional)</Label>
+                    <Input type="file" accept="image/*" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
+                    {logoFile && <p className="text-xs text-muted-foreground mt-1">Arquivo selecionado: {logoFile.name}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label>Área Total (ha)</Label>

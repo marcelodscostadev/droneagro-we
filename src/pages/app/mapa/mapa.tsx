@@ -32,6 +32,48 @@ const ICONS = {
   none: createIcon('grey')
 }
 
+const createLogoIcon = (logoUrl: string, freqCategory: string) => {
+  const colors: Record<string, string> = {
+    high: '#22c55e',
+    medium: '#eab308',
+    low: '#ef4444',
+    none: '#94a3b8'
+  }
+  const borderColor = colors[freqCategory] || '#94a3b8'
+  
+  return new L.DivIcon({
+    html: `
+      <div style="
+        width: 40px; 
+        height: 40px; 
+        border-radius: 50%; 
+        background: white; 
+        border: 3px solid ${borderColor}; 
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      ">
+        <img src="${logoUrl}" style="width: 100%; height: 100%; object-fit: cover;" />
+      </div>
+      <div style="
+        width: 0;
+        height: 0;
+        border-left: 6px solid transparent;
+        border-right: 6px solid transparent;
+        border-top: 8px solid ${borderColor};
+        margin: 0 auto;
+        margin-top: -2px;
+      "></div>
+    `,
+    className: 'custom-logo-marker',
+    iconSize: [40, 48],
+    iconAnchor: [20, 48],
+    popupAnchor: [0, -48]
+  })
+}
+
 export function MapaPage() {
   const { data: clientsData, isLoading } = useQuery({
     queryKey: ['map_clients'],
@@ -107,12 +149,20 @@ export function MapaPage() {
             <Marker 
               key={client.id} 
               position={[client.lat, client.lng]} 
-              icon={ICONS[client.freqCategory as keyof typeof ICONS]}
+              icon={client.logo_url ? createLogoIcon(client.logo_url, client.freqCategory) : ICONS[client.freqCategory as keyof typeof ICONS]}
             >
               <Popup className="rounded-lg">
                 <div className="font-sans space-y-2 min-w-[200px]">
-                  <h3 className="font-bold text-sm border-b pb-1">{client.name}</h3>
+                  <div className="flex items-center gap-3 border-b pb-2">
+                    {client.logo_url && (
+                      <img src={client.logo_url} alt={client.name} className="w-10 h-10 rounded-full object-cover border shadow-sm" />
+                    )}
+                    <h3 className="font-bold text-sm">{client.name}</h3>
+                  </div>
                   <div className="text-xs text-slate-600 space-y-1">
+                    {client.person_type && client.document_number && (
+                      <p><strong>{client.person_type === 'PJ' ? 'CNPJ' : 'CPF'}:</strong> {client.document_number}</p>
+                    )}
                     <p><strong>Área Total:</strong> {client.area_ha || 0} ha</p>
                     <p><strong>Total de OS:</strong> {client.osCount} serviços</p>
                     <p><strong>Contato:</strong> {client.phone || 'N/A'}</p>
