@@ -47,6 +47,7 @@ type ClientFormData = z.infer<typeof clientSchema>
 export function ClientesPage() {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
+  const [editingClient, setEditingClient] = useState<any>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const queryClient = useQueryClient()
 
@@ -98,6 +99,64 @@ export function ClientesPage() {
     }
   })
 
+  const updateClient = useMutation({
+    mutationFn: async (data: ClientFormData) => {
+      let logo_url = editingClient.logo_url
+      
+      if (logoFile) {
+        const fileExt = logoFile.name.split('.').pop()
+        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('attachments').upload(`logos/${fileName}`, logoFile)
+        if (uploadError) throw uploadError
+        
+        logo_url = supabase.storage.from('attachments').getPublicUrl(`logos/${fileName}`).data.publicUrl
+      }
+
+      const { error } = await supabase.from('clients').update({ ...data, logo_url }).eq('id', editingClient.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Cliente atualizado com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['clients'] })
+      setOpen(false)
+      setEditingClient(null)
+      setLogoFile(null)
+      reset()
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao atualizar cliente: ' + error.message)
+    }
+  })
+
+  const handleEdit = (c: any) => {
+    setEditingClient(c)
+    reset({
+      name: c.name,
+      phone: c.phone || '',
+      email: c.email || '',
+      address: c.address || '',
+      area_ha: c.area_ha || 0,
+      default_price_per_ha: c.default_price_per_ha || 0,
+      payment_method: c.payment_method || 'pix',
+      payment_term_days: c.payment_term_days || 0,
+      notes: c.notes || '',
+      lat: c.lat || '',
+      lng: c.lng || '',
+      person_type: c.person_type || 'PF',
+      document_number: c.document_number || ''
+    })
+    setOpen(true)
+  }
+
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen)
+    if (!isOpen) {
+      setEditingClient(null)
+      setLogoFile(null)
+      reset({ payment_method: 'pix', payment_term_days: 0, area_ha: 0, default_price_per_ha: 0, person_type: 'PF' })
+    }
+  }
+
   const filtered = clients.filter((c: any) => c.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
@@ -118,11 +177,11 @@ export function ClientesPage() {
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button><Plus className="h-4 w-4 mr-2" />Novo Cliente</Button>
+              <Button onClick={() => handleOpenChange(true)}><Plus className="h-4 w-4 mr-2" />Novo Cliente</Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader><DialogTitle>Cadastrar Cliente</DialogTitle></DialogHeader>
-              <form onSubmit={handleSubmit((d) => createClient.mutate(d))} className="space-y-4 py-2">
+              <DialogHeader><DialogTitle>{editingClient ? 'Editar Cliente' : 'Cadastrar Cliente'}</DialogTitle></DialogHeader>
+              <form onSubmit={handleSubmit((d) => editingClient ? updateClient.mutate(d) : createClient.mutate(d))} className="space-y-4 py-2">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2 col-span-2">
                     <Label>Nome / Razão Social *</Label>
@@ -222,9 +281,9 @@ export function ClientesPage() {
                   <Textarea {...register('notes')} placeholder="Informações adicionais..." />
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-                  <Button type="submit" disabled={isSubmitting || createClient.isPending}>
-                    {isSubmitting || createClient.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>Cancelar</Button>
+                  <Button type="submit" disabled={isSubmitting || createClient.isPending || updateClient.isPending}>
+                    {isSubmitting || createClient.isPending || updateClient.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     Salvar Cliente
                   </Button>
                 </DialogFooter>
@@ -276,7 +335,7 @@ export function ClientesPage() {
                     <TableCell className="text-center font-bold text-primary">{c.area_ha?.toLocaleString('pt-BR')} ha</TableCell>
                     <TableCell><Badge variant="outline">{PAYMENT_LABELS[c.payment_method] || c.payment_method}</Badge></TableCell>
                     <TableCell className="text-muted-foreground">{c.payment_term_days > 0 ? `${c.payment_term_days} dias` : 'À vista'}</TableCell>
-                    <TableCell className="text-right"><Button variant="ghost" size="sm">Editar</Button></TableCell>
+                    <TableCell className="text-right"><Button variant="ghost" size="sm" onClick={() => handleEdit(c)}>Editar</Button></TableCell>
                   </TableRow>
                 ))
               )}
