@@ -28,8 +28,16 @@ const clientSchema = z.object({
   payment_method: z.string().optional(),
   payment_term_days: z.coerce.number().min(0, 'Prazo inválido'),
   notes: z.string().optional(),
-  lat: z.coerce.number().optional(),
-  lng: z.coerce.number().optional(),
+  lat: z.any().transform(v => {
+    if (v === '' || v === undefined || v === null) return undefined;
+    const str = String(v).replace(',', '.');
+    return Number(str);
+  }),
+  lng: z.any().transform(v => {
+    if (v === '' || v === undefined || v === null) return undefined;
+    const str = String(v).replace(',', '.');
+    return Number(str);
+  }),
 })
 
 type ClientFormData = z.infer<typeof clientSchema>
@@ -158,11 +166,11 @@ export function ClientesPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Latitude (Opcional)</Label>
-                    <Input {...register('lat')} type="number" step="0.000001" placeholder="-12.345678" />
+                    <Input {...register('lat')} type="text" placeholder="-12.345678" />
                   </div>
                   <div className="space-y-2">
                     <Label>Longitude (Opcional)</Label>
-                    <Input {...register('lng')} type="number" step="0.000001" placeholder="-55.678901" />
+                    <Input {...register('lng')} type="text" placeholder="-55.678901" />
                   </div>
                 </div>
                 <div className="space-y-2">

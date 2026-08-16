@@ -152,3 +152,32 @@ CREATE POLICY "Acesso total para autenticados em activities" ON public.activitie
 CREATE POLICY "Acesso total para autenticados em measurement_bulletins" ON public.measurement_bulletins FOR ALL TO authenticated USING (true);
 CREATE POLICY "Acesso total para autenticados em bulletin_expenses" ON public.bulletin_expenses FOR ALL TO authenticated USING (true);
 CREATE POLICY "Acesso total para autenticados em transactions" ON public.transactions FOR ALL TO authenticated USING (true);
+
+-- ==========================================================
+-- MOBILE APP (OFFLINE & GEOFENCE)
+-- ==========================================================
+
+CREATE TABLE public.daily_shifts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  technician_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  shift_date DATE NOT NULL,
+  km_start INT,
+  km_end INT,
+  km_start_photo_url TEXT,
+  km_end_photo_url TEXT,
+  status TEXT DEFAULT 'in_progress', -- in_progress, completed
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.daily_shifts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Acesso total para autenticados em daily_shifts" ON public.daily_shifts FOR ALL TO authenticated USING (true);
+
+-- Adicionar colunas de rastreamento invisível na OS
+ALTER TABLE public.service_orders 
+  ADD COLUMN start_lat DECIMAL,
+  ADD COLUMN start_lng DECIMAL,
+  ADD COLUMN end_lat DECIMAL,
+  ADD COLUMN end_lng DECIMAL,
+  ADD COLUMN started_at TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN finished_at TIMESTAMP WITH TIME ZONE;
+
