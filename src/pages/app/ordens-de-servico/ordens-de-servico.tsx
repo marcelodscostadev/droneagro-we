@@ -19,7 +19,9 @@ const STATUS_MAP: Record<string, { label: string; variant: 'success' | 'warning'
   scheduled: { label: 'Agendado', variant: 'secondary' },
   traveling: { label: 'Em Deslocamento', variant: 'outline' },
   in_activity: { label: 'Em Atividade', variant: 'warning' },
+  in_progress: { label: 'Em Atividade', variant: 'warning' }, // Retrocompatibilidade
   finished: { label: 'Finalizada', variant: 'success' },
+  completed: { label: 'Finalizada', variant: 'success' }, // Retrocompatibilidade
   cancelled: { label: 'Cancelada', variant: 'destructive' },
 }
 

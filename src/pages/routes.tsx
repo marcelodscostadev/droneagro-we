@@ -16,6 +16,8 @@ import { ApuracaoPage } from './app/financeiro/apuracao'
 import { CadastrosFinanceirosPage } from './app/financeiro/cadastros'
 import { FluxoCaixaPage } from './app/financeiro/fluxo-caixa'
 import { OperacionalPage } from './app/relatorios/operacional'
+import { ItinerariosPage } from './app/relatorios/itinerarios'
+import { ItinerarioPdfPage } from './app/relatorios/itinerario-pdf'
 import { MapaPage } from './app/mapa/mapa'
 import { ConfiguracoesPage } from './app/configuracoes/configuracoes'
 
@@ -61,12 +63,24 @@ export const router = createBrowserRouter([
         Component: () => <PrivateRoute allowedRoles={['admin']}><ComissoesPage /></PrivateRoute>,
       },
       {
-        path: '/financeiro/apuracao',
-        Component: () => <PrivateRoute allowedRoles={['admin']}><ApuracaoPage /></PrivateRoute>,
+        path: '/relatorios/operacional',
+        Component: () => <PrivateRoute allowedRoles={['admin']}><OperacionalPage /></PrivateRoute>,
+      },
+      {
+        path: '/relatorios/itinerarios',
+        Component: () => <PrivateRoute allowedRoles={['admin']}><ItinerariosPage /></PrivateRoute>,
+      },
+      {
+        path: '/relatorios/itinerarios/:id/pdf',
+        Component: () => <PrivateRoute allowedRoles={['admin']}><ItinerarioPdfPage /></PrivateRoute>,
       },
       {
         path: '/financeiro/cadastros',
         Component: () => <PrivateRoute allowedRoles={['admin']}><CadastrosFinanceirosPage /></PrivateRoute>,
+      },
+      {
+        path: '/financeiro/apuracao',
+        Component: () => <PrivateRoute allowedRoles={['admin']}><ApuracaoPage /></PrivateRoute>,
       },
       {
         path: '/financeiro/fluxo-caixa',

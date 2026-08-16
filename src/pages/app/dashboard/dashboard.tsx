@@ -9,7 +9,9 @@ import { supabase } from '@/lib/supabase'
 
 const STATUS_CONFIG: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'outline' }> = {
   'finished': { label: 'Concluído', variant: 'success' },
-  'in-activity': { label: 'Em Atividade', variant: 'warning' },
+  'completed': { label: 'Concluído', variant: 'success' }, // Retrocompatibilidade
+  'in_activity': { label: 'Em Atividade', variant: 'warning' },
+  'in_progress': { label: 'Em Atividade', variant: 'warning' }, // Retrocompatibilidade
   'traveling': { label: 'Em Deslocamento', variant: 'outline' },
   'scheduled': { label: 'Agendado', variant: 'secondary' },
 }
@@ -20,20 +22,21 @@ export function Dashboard() {
   const { data: stats, isLoading: isStatsLoading } = useQuery({
     queryKey: ['dashboard_stats'],
     queryFn: async () => {
-      const today = new Date().toISOString().split('T')[0]
       const now = new Date()
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString()
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
       // 1. Agenda de Hoje (service orders scheduled for today)
       const { data: agendamentosHoje = [] } = await supabase
         .from('service_orders')
         .select('id, scheduled_at, status, type, area_ha, os_number, client:clients(name)')
-        .gte('scheduled_at', `${today}T00:00:00Z`)
-        .lte('scheduled_at', `${today}T23:59:59Z`)
+        .gte('scheduled_at', startOfDay)
+        .lte('scheduled_at', endOfDay)
         .order('scheduled_at', { ascending: true })
 
       const osHojeTotal = agendamentosHoje?.length || 0
-      const osHojeConcluidas = agendamentosHoje?.filter(os => os.status === 'finished').length || 0
+      const osHojeConcluidas = agendamentosHoje?.filter(os => os.status === 'finished' || os.status === 'completed').length || 0
 
       // 2. Boletins Pendentes
       const { count: boletinsPendentes } = await supabase
@@ -65,8 +68,8 @@ export function Dashboard() {
         .select('id, status, type, client_id, area_ha')
         .gte('scheduled_at', startOfMonth)
         
-      const osConcluidasMes = osMes?.filter(os => os.status === 'finished').length || 0
-      const demosMes = osMes?.filter(os => os.type === 'Demonstração').length || 0
+      const osConcluidasMes = osMes?.filter(os => os.status === 'finished' || os.status === 'completed').length || 0
+      const demosMes = osMes?.filter(os => os.type === 'demo').length || 0
       
       const uniqueClients = new Set(osMes?.map(os => os.client_id))
       const clientesAtendidosMes = uniqueClients.size

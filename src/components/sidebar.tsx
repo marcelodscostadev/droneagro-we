@@ -72,6 +72,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: BarChart3,
     items: [
       { label: 'Operacional', to: '/relatorios/operacional', icon: TrendingUp },
+      { label: 'Itinerários', to: '/relatorios/itinerarios', icon: MapPin },
     ],
   },
   { label: 'Mapa das Fazendas', to: '/mapa', icon: MapPin },
