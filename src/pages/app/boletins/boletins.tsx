@@ -18,6 +18,7 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 const STATUS_MAP: Record<string, { label: string; variant: 'warning' | 'success' | 'destructive' | 'outline' | 'secondary' }> = {
   pending: { label: 'Pendente', variant: 'warning' },
@@ -56,6 +57,7 @@ export function BoletinsPage() {
   })
 
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const { data: boletins = [], isLoading, isFetching } = useQuery({
     queryKey: ['boletins'],
@@ -162,26 +164,28 @@ export function BoletinsPage() {
       const today = new Date().toISOString().split('T')[0]
 
       // Income transaction
-      await supabase.from('transactions').insert([{
+      const { error: incomeError } = await supabase.from('transactions').insert([{
         type: 'income',
         description: `Serviço Prestado - NF ${invoiceData.invoice_number || 'S/N'} - ${boletimToInvoice.client?.name}`,
         amount: boletimToInvoice.total_value,
-        date: dueDate,
+        due_date: dueDate,
         status: 'pending',
         bulletin_id: boletimToInvoice.id
       }])
+      if (incomeError) throw incomeError
 
       // Expense transaction
       if (boletimToInvoice.commission_value > 0 && boletimToInvoice.technician_id) {
-        await supabase.from('transactions').insert([{
+        const { error: expError } = await supabase.from('transactions').insert([{
           type: 'expense',
           description: `Comissão - Boletim BM-${boletimToInvoice.id.substring(0,4)}`,
           amount: boletimToInvoice.commission_value,
-          date: today,
+          due_date: today,
           status: 'pending',
           bulletin_id: boletimToInvoice.id,
           technician_id: boletimToInvoice.technician_id
         }])
+        if (expError) throw expError
       }
     },
     onSuccess: () => {
@@ -374,9 +378,11 @@ export function BoletinsPage() {
                               </Button>
                             </>
                           )}
-                          <Button variant="ghost" size="icon" className="h-8 w-8" title="Gerar PDF do Boletim">
-                            <FileDown className="h-4 w-4" />
-                          </Button>
+                          {b.status === 'approved' || b.status === 'invoiced' ? (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/boletins/${b.id}/pdf`)} title="Gerar PDF do Boletim">
+                              <FileDown className="h-4 w-4" />
+                            </Button>
+                          ) : null}
                         </div>
                       </TableCell>
                     </TableRow>

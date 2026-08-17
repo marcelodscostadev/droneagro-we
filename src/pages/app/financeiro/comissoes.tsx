@@ -18,7 +18,7 @@ export function ComissoesPage() {
         .select('*, technician:profiles(name)')
         .eq('type', 'expense')
         .not('technician_id', 'is', null) // filter only transactions with a technician assigned (commissions)
-        .order('date', { ascending: false })
+        .order('due_date', { ascending: false })
       if (error) throw error; return data
     }
   })
@@ -49,7 +49,7 @@ export function ComissoesPage() {
               {commissions.map((t: any) => (
                 <TableRow key={t.id}>
                   <TableCell className="font-medium">{t.description}</TableCell>
-                  <TableCell>{formatDate(t.date)}</TableCell>
+                  <TableCell>{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.technician?.name || '—'}</TableCell>
                   <TableCell className="text-right font-bold text-amber-600">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-center">

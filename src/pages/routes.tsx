@@ -9,6 +9,7 @@ import { UsuariosPage } from './app/usuarios/usuarios'
 import { AgendamentosPage } from './app/agendamentos/agendamentos'
 import { OrdensDeServico } from './app/ordens-de-servico/ordens-de-servico'
 import { BoletinsPage } from './app/boletins/boletins'
+import { BoletimPdfPage } from './app/boletins/boletim-pdf'
 import { ContasReceberPage } from './app/financeiro/contas-receber'
 import { ContasPagarPage } from './app/financeiro/contas-pagar'
 import { ComissoesPage } from './app/financeiro/comissoes'
@@ -49,6 +50,10 @@ export const router = createBrowserRouter([
       {
         path: '/boletins',
         Component: () => <PrivateRoute><BoletinsPage /></PrivateRoute>,
+      },
+      {
+        path: '/boletins/:id/pdf',
+        Component: () => <PrivateRoute><BoletimPdfPage /></PrivateRoute>,
       },
       {
         path: '/financeiro/receber',

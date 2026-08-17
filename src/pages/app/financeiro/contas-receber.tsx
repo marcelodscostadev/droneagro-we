@@ -25,7 +25,7 @@ export function ContasReceberPage() {
       const { data, error } = await supabase.from('transactions')
         .select('*, category:financial_categories(name), cost_center:cost_centers(name)')
         .eq('type', 'income')
-        .order('date', { ascending: false })
+        .order('due_date', { ascending: false })
       if (error) throw error; return data
     }
   })
@@ -80,7 +80,7 @@ export function ContasReceberPage() {
               {transactions.map((t: any) => (
                 <TableRow key={t.id}>
                   <TableCell className="font-medium">{t.description}</TableCell>
-                  <TableCell>{formatDate(t.date)}</TableCell>
+                  <TableCell>{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.category?.name || '—'}</TableCell>
                   <TableCell className="text-right font-bold text-emerald-600">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-center">
@@ -103,7 +103,7 @@ export function ContasReceberPage() {
             <div className="space-y-2"><Label>Descrição</Label><Input {...register('description', { required: true })} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Valor (R$)</Label><Input type="number" step="0.01" {...register('amount', { required: true })} /></div>
-              <div className="space-y-2"><Label>Data</Label><Input type="date" {...register('date', { required: true })} /></div>
+              <div className="space-y-2"><Label>Data</Label><Input type="date" {...register('due_date', { required: true })} /></div>
             </div>
             <div className="space-y-2">
               <Label>Categoria</Label>

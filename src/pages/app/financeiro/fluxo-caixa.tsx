@@ -20,7 +20,7 @@ export function FluxoCaixaPage() {
       const { data, error } = await supabase.from('transactions')
         .select('*')
         .eq('status', 'paid')
-        .order('date', { ascending: true }) // important to calculate running balance
+        .order('due_date', { ascending: true }) // important to calculate running balance
       if (error) throw error; return data
     }
   })
@@ -28,9 +28,10 @@ export function FluxoCaixaPage() {
   // Group by date
   const flowByDate: Record<string, { income: number, expense: number }> = {}
   transactions.forEach((t: any) => {
-    if (!flowByDate[t.date]) flowByDate[t.date] = { income: 0, expense: 0 }
-    if (t.type === 'income') flowByDate[t.date].income += Number(t.amount)
-    if (t.type === 'expense') flowByDate[t.date].expense += Number(t.amount)
+    if (!t.due_date) return
+    if (!flowByDate[t.due_date]) flowByDate[t.due_date] = { income: 0, expense: 0 }
+    if (t.type === 'income') flowByDate[t.due_date].income += Number(t.amount)
+    if (t.type === 'expense') flowByDate[t.due_date].expense += Number(t.amount)
   })
 
   const dates = Object.keys(flowByDate).sort()
