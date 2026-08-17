@@ -191,6 +191,10 @@ export function BoletinsPage() {
     onSuccess: () => {
       toast.success('Boletim faturado com sucesso!')
       queryClient.invalidateQueries({ queryKey: ['boletins'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_expense'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] })
       setOpenInvoice(false)
       setInvoiceData({ invoice_number: '', due_date: '', invoice_file: null, boleto_file: null })
       setBoletimToInvoice(null)
