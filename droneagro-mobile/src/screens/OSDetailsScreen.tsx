@@ -6,6 +6,7 @@ import { MapPin, Clock, Save, PlaySquare } from 'lucide-react-native';
 
 export function OSDetailsScreen({ route, navigation }: any) {
   const { os } = route.params;
+  const [currentOs, setCurrentOs] = useState(os);
   const [status, setStatus] = useState(os.status); // scheduled, in_activity, finished
   const [hectares, setHectares] = useState(os.area_ha?.toString() || '');
   const [notes, setNotes] = useState(os.notes || '');
@@ -31,7 +32,7 @@ export function OSDetailsScreen({ route, navigation }: any) {
 
     // Atualiza o estado da OS localmente (Offline)
     const updatedOs = {
-      ...os,
+      ...currentOs,
       status: 'in_activity',
       start_lat: coords.latitude,
       start_lng: coords.longitude,
@@ -40,6 +41,7 @@ export function OSDetailsScreen({ route, navigation }: any) {
     };
 
     await updateLocalOS(updatedOs);
+    setCurrentOs(updatedOs);
     setStatus('in_activity');
     setLoading(false);
     Alert.alert('Iniciado', 'Localização capturada. Serviço em andamento!');
@@ -59,7 +61,7 @@ export function OSDetailsScreen({ route, navigation }: any) {
     }
 
     const updatedOs = {
-      ...os,
+      ...currentOs,
       status: 'finished',
       area_ha: parseFloat(hectares),
       notes: notes,
@@ -70,6 +72,7 @@ export function OSDetailsScreen({ route, navigation }: any) {
     };
 
     await updateLocalOS(updatedOs);
+    setCurrentOs(updatedOs);
     setStatus('finished');
     setLoading(false);
     Alert.alert('Sucesso', 'Serviço finalizado e salvo no celular!');
