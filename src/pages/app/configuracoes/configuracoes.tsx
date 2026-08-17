@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 
 export function ConfiguracoesPage() {
   const [isWiping, setIsWiping] = useState(false)
+  const [isWipingFinance, setIsWipingFinance] = useState(false)
   const queryClient = useQueryClient()
 
   const handleWipeData = async () => {
@@ -28,6 +29,21 @@ export function ConfiguracoesPage() {
       toast.error('Erro ao limpar dados: ' + e.message)
     } finally {
       setIsWiping(false)
+    }
+  }
+
+  const handleWipeFinance = async () => {
+    if (!confirm('ATENÇÃO: Você tem certeza que deseja APAGAR TODO O HISTÓRICO do Contas a Pagar, Contas a Receber e Comissões? Esta ação não pode ser desfeita.')) return
+    
+    setIsWipingFinance(true)
+    try {
+      await supabase.from('transactions').delete().not('id', 'is', null)
+      toast.success('Todos os registros financeiros foram apagados com sucesso.')
+      queryClient.clear()
+    } catch (e: any) {
+      toast.error('Erro ao limpar dados financeiros: ' + e.message)
+    } finally {
+      setIsWipingFinance(false)
     }
   }
 
@@ -52,7 +68,7 @@ export function ConfiguracoesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between border-t border-red-200/60 pt-4 mt-2">
+          <div className="flex items-center justify-between border-t border-red-200/60 pt-4 mt-4">
             <div>
               <p className="font-semibold text-slate-900">Zerar Base Operacional</p>
               <p className="text-sm text-slate-500">Exclui todas as OS, Boletins e Turnos para iniciar do zero.</p>
@@ -62,7 +78,21 @@ export function ConfiguracoesPage() {
               onClick={handleWipeData}
               disabled={isWiping}
             >
-              {isWiping ? 'Apagando...' : 'Zerar Tudo'}
+              {isWiping ? 'Apagando...' : 'Zerar Operacional'}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-red-200/60 pt-4 mt-4">
+            <div>
+              <p className="font-semibold text-slate-900">Zerar Financeiro</p>
+              <p className="text-sm text-slate-500">Exclui todo o histórico de Contas a Pagar, Receber e Comissões.</p>
+            </div>
+            <Button 
+              variant="destructive" 
+              onClick={handleWipeFinance}
+              disabled={isWipingFinance}
+            >
+              {isWipingFinance ? 'Apagando...' : 'Zerar Financeiro'}
             </Button>
           </div>
         </CardContent>
