@@ -218,9 +218,9 @@ export function ItinerarioPdfPage() {
         </div>
 
         {/* Mapa do Itinerário */}
-        {osList.filter((os: any) => os.start_lat).length > 0 && (
-          <div className="mb-8 page-break-inside-avoid">
-            <h2 className="text-lg font-bold border-b pb-2 mb-4">Mapa de Atividades (Localizações de Início)</h2>
+        <div className="mb-8 page-break-inside-avoid">
+          <h2 className="text-lg font-bold border-b pb-2 mb-4">Mapa de Atividades (Localizações de Início)</h2>
+          {osList.filter((os: any) => os.start_lat && os.start_lng).length > 0 ? (
             <div className="h-[400px] rounded-lg border overflow-hidden shadow-inner">
               <MapContainer 
                 center={[centerLat, centerLng]} 
@@ -247,9 +247,13 @@ export function ItinerarioPdfPage() {
                 ))}
               </MapContainer>
             </div>
-            <p className="text-xs text-slate-400 mt-2 text-center">Nota: O mapa requer conexão com a internet para ser renderizado corretamente na impressão.</p>
-          </div>
-        )}
+          ) : (
+            <div className="h-32 bg-slate-50 border border-dashed border-slate-300 rounded-lg flex items-center justify-center text-slate-500 font-medium">
+               Nenhum dado de GPS (Localização) foi capturado pelo celular do piloto neste turno.
+            </div>
+          )}
+          <p className="text-xs text-slate-400 mt-2 text-center">Nota: O mapa requer conexão com a internet para ser renderizado corretamente na impressão.</p>
+        </div>
 
       </div>
     </div>
