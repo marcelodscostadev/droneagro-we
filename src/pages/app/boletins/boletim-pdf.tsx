@@ -73,15 +73,16 @@ export function BoletimPdfPage() {
           <div>
             <h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Dados do Cliente</h3>
             <p className="font-bold text-lg">{boletim.client?.name}</p>
-            <p className="text-slate-600 text-sm mt-1">{boletim.client?.document || 'Documento não informado'}</p>
-            <p className="text-slate-600 text-sm">{boletim.client?.email || 'Email não informado'}</p>
-            <p className="text-slate-600 text-sm">{boletim.client?.phone || 'Telefone não informado'}</p>
+            {boletim.client?.document && <p className="text-slate-600 text-sm mt-1">CNPJ: {boletim.client.document}</p>}
+            <p className="text-slate-600 text-sm">{boletim.client?.address ? `Endereço: ${boletim.client.address}` : 'Endereço não informado'}</p>
+            {boletim.client?.email && <p className="text-slate-600 text-sm">{boletim.client.email}</p>}
+            {boletim.client?.phone && <p className="text-slate-600 text-sm">{boletim.client.phone}</p>}
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-400 uppercase mb-2">Dados do Serviço</h3>
             <p className="font-medium text-slate-700">Técnico/Piloto: <span className="font-normal">{boletim.technician?.name}</span></p>
-            <p className="font-medium text-slate-700">Data da OS: <span className="font-normal">{boletim.service_order?.scheduled_at ? formatDate(boletim.service_order.scheduled_at) : '---'}</span></p>
-            <p className="font-medium text-slate-700">Tipo de OS: <span className="font-normal">{boletim.service_order?.type === 'demo' ? 'Demonstração' : 'Pago'}</span></p>
+            {boletim.technician?.email && <p className="text-slate-600 text-sm">{boletim.technician.email}</p>}
+            <p className="font-medium text-slate-700 mt-2">Data da OS: <span className="font-normal">{boletim.service_order?.scheduled_at ? formatDate(boletim.service_order.scheduled_at) : '---'}</span></p>
           </div>
         </div>
 

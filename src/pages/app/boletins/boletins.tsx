@@ -90,24 +90,19 @@ export function BoletinsPage() {
   const currentCommission = currentSubtotal * ((wPct || 0) / 100)
 
   const updateBoletim = useMutation({
-    mutationFn: async (data: EditFormData) => {
+    mutationFn: async (data: any) => {
       const subtotal = data.hectares_sprayed * data.price_per_ha
-      const comissao = subtotal * (data.commission_pct / 100)
-      
-      const expensesTotal = selectedBoletim.expenses?.reduce((acc: number, curr: any) => acc + Number(curr.total_value), 0) || 0
-      const total_value = subtotal + expensesTotal
+      const tot = subtotal + (selectedBoletim?.expenses?.reduce((acc: number, curr: any) => acc + Number(curr.total_value), 0) || 0)
+      const comm = subtotal * (data.commission_pct / 100)
 
-      const { error } = await supabase.from('measurement_bulletins')
-        .update({
-          hectares_sprayed: data.hectares_sprayed,
-          price_per_ha: data.price_per_ha,
-          commission_pct: data.commission_pct,
-          subtotal: subtotal,
-          commission_value: comissao,
-          total_value: total_value
-        })
-        .eq('id', selectedBoletim.id)
-      
+      const { error } = await supabase.from('measurement_bulletins').update({
+        hectares_sprayed: data.hectares_sprayed,
+        price_per_ha: data.price_per_ha,
+        subtotal: subtotal,
+        total_value: tot,
+        commission_pct: data.commission_pct,
+        commission_value: comm
+      }).eq('id', selectedBoletim.id)
       if (error) throw error
     },
     onSuccess: () => {
@@ -401,7 +396,6 @@ export function BoletinsPage() {
                               </h3>
                               <div className="rounded-lg border bg-card p-4 space-y-3 text-sm">
                                 {[
-                                  ['KM Rodado', `${b.km_total || 0} km`],
                                   ['Hectares Pulverizados', `${b.hectares_sprayed || 0} ha`],
                                   ['Preço por Hectare', formatCurrency(b.price_per_ha)],
                                   ['Subtotal do Serviço', formatCurrency(b.subtotal)],
@@ -516,17 +510,19 @@ export function BoletinsPage() {
             <DialogTitle>Editar Valores da Medição</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit((d) => updateBoletim.mutate(d))} className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Hectares Efetivamente Pulverizados</Label>
-              <Input {...register('hectares_sprayed')} type="number" step="0.1" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Hectares Pulverizados</Label>
+                <Input type="number" step="0.01" {...register('hectares_sprayed')} />
+              </div>
+              <div className="space-y-2">
+                <Label>Preço por Hectare (R$)</Label>
+                <Input type="number" step="0.01" {...register('price_per_ha')} />
+              </div>
             </div>
             <div className="space-y-2">
-              <Label>Preço por Hectare (R$)</Label>
-              <Input {...register('price_per_ha')} type="number" step="0.01" />
-            </div>
-            <div className="space-y-2">
-              <Label>Comissão do Técnico (%)</Label>
-              <Input {...register('commission_pct')} type="number" step="0.1" />
+              <Label>Comissão do Piloto/Técnico (%)</Label>
+              <Input type="number" step="0.1" {...register('commission_pct')} />
             </div>
 
             <div className="bg-muted p-3 rounded-md text-sm space-y-1">
