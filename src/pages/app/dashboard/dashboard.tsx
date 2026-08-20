@@ -1,11 +1,13 @@
-import { Cpu, CalendarDays, CheckCircle, Clock, TrendingUp, FileBarChart, Sprout, Gauge, Loader2 } from 'lucide-react'
+import { Cpu, CalendarDays, CheckCircle, Clock, TrendingUp, FileBarChart, Sprout, Gauge, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { Navigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 
 const STATUS_CONFIG: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'outline' }> = {
   'finished': { label: 'Concluído', variant: 'success' },
@@ -18,14 +20,43 @@ const STATUS_CONFIG: Record<string, { label: string; variant: 'success' | 'warni
 
 export function Dashboard() {
   const { data: user, isLoading: isAuthLoading, isError } = useAuth()
+  const [agendaDate, setAgendaDate] = useState(new Date())
+  const [currentMonthDate, setCurrentMonthDate] = useState(new Date(agendaDate.getFullYear(), agendaDate.getMonth(), 1))
+
+  const handleSetAgendaDate = (d: Date) => {
+    setAgendaDate(d)
+    if (d.getMonth() !== currentMonthDate.getMonth() || d.getFullYear() !== currentMonthDate.getFullYear()) {
+      setCurrentMonthDate(new Date(d.getFullYear(), d.getMonth(), 1))
+    }
+  }
+
+  // Calendar logic
+  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
+
+  const daysInMonth = getDaysInMonth(currentMonthDate.getFullYear(), currentMonthDate.getMonth())
+  const firstDay = getFirstDayOfMonth(currentMonthDate.getFullYear(), currentMonthDate.getMonth())
+
+  const calendarDays: (Date | null)[] = []
+  for (let i = 0; i < firstDay; i++) calendarDays.push(null)
+  for (let i = 1; i <= daysInMonth; i++) calendarDays.push(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), i))
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['dashboard_stats'],
+    queryKey: ['dashboard_stats', agendaDate.toISOString().split('T')[0], currentMonthDate.toISOString().split('T')[0]],
     queryFn: async () => {
       const now = new Date()
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString()
+      const startOfDay = new Date(agendaDate.getFullYear(), agendaDate.getMonth(), agendaDate.getDate()).toISOString()
+      const endOfDay = new Date(agendaDate.getFullYear(), agendaDate.getMonth(), agendaDate.getDate(), 23, 59, 59, 999).toISOString()
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+      const startOfCalendarMonth = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1).toISOString()
+      const endOfCalendarMonth = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 0, 23, 59, 59, 999).toISOString()
+
+      // 0. Agendamentos do Calendário
+      const { data: agendamentosCalendario = [] } = await supabase
+        .from('service_orders')
+        .select('scheduled_at')
+        .gte('scheduled_at', startOfCalendarMonth)
+        .lte('scheduled_at', endOfCalendarMonth)
 
       // 1. Agenda de Hoje (service orders scheduled for today)
       const { data: agendamentosHoje = [] } = await supabase
@@ -84,6 +115,7 @@ export function Dashboard() {
       const hectaresMes = boletinsMes?.reduce((acc, curr) => acc + Number(curr.hectares_sprayed), 0) || 0
 
       return {
+        agendamentosCalendario: agendamentosCalendario || [],
         agendamentosHoje: agendamentosHoje || [],
         osHoje: { total: osHojeTotal, concluidas: osHojeConcluidas },
         hectaresMes,
@@ -95,7 +127,8 @@ export function Dashboard() {
         clientesAtendidosMes
       }
     },
-    refetchInterval: 60000 // Refetch every minute to keep dashboard live
+    refetchInterval: 60000, // Refetch every minute to keep dashboard live
+    placeholderData: keepPreviousData
   })
 
   if (isAuthLoading) {
@@ -109,6 +142,7 @@ export function Dashboard() {
   if (isError || !user) return <Navigate to="/auth/sign-in" replace />
 
   const data = stats || {
+    agendamentosCalendario: [],
     agendamentosHoje: [],
     osHoje: { total: 0, concluidas: 0 },
     hectaresMes: 0,
@@ -200,20 +234,50 @@ export function Dashboard() {
         <Card className="xl:col-span-2 border-muted/50 shadow-xl shadow-black/5 relative overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/80 via-primary to-primary/60 rounded-t-xl" />
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <CardTitle className="flex items-center gap-2 text-base">
                 <CalendarDays className="h-4 w-4 text-primary" />
-                Agenda de Hoje
+                {agendaDate.toDateString() === new Date().toDateString() ? 'Agenda de Hoje' : 'Agenda do Dia'}
               </CardTitle>
-              <Badge variant="secondary" className="text-xs">
-                {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => {
+                  const d = new Date(agendaDate); d.setDate(d.getDate() - 1); handleSetAgendaDate(d);
+                }}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                
+                <div className="relative flex items-center justify-center">
+                  <Badge variant="secondary" className="text-xs px-3 py-1 cursor-pointer hover:bg-secondary/80 transition-colors">
+                    {agendaDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  </Badge>
+                  <input
+                    type="date"
+                    value={agendaDate.toISOString().split('T')[0]}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const [y, m, d] = e.target.value.split('-')
+                        handleSetAgendaDate(new Date(Number(y), Number(m) - 1, Number(d)))
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => {
+                  const d = new Date(agendaDate); d.setDate(d.getDate() + 1); handleSetAgendaDate(d);
+                }}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => handleSetAgendaDate(new Date())}>
+                  Hoje
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
             {data.agendamentosHoje.length === 0 ? (
               <div className="text-center py-6 text-muted-foreground">
-                <p>Nenhum serviço agendado para hoje.</p>
+                <p>Nenhum serviço agendado para {agendaDate.toDateString() === new Date().toDateString() ? 'hoje' : 'esta data'}.</p>
               </div>
             ) : data.agendamentosHoje.map((ag: any) => {
               const statusCfg = STATUS_CONFIG[ag.status] || STATUS_CONFIG['scheduled']
@@ -244,6 +308,59 @@ export function Dashboard() {
 
         {/* Quick stats panel */}
         <div className="space-y-4">
+          <Card className="border-muted/50 shadow-sm">
+            <CardHeader className="pb-2 pt-4 flex flex-row items-center justify-between">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                setCurrentMonthDate(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() - 1, 1))
+              }}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="text-sm font-semibold capitalize text-foreground">
+                {currentMonthDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              </div>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                setCurrentMonthDate(new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 1))
+              }}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, idx) => (
+                  <div key={idx} className="text-[10px] font-medium text-muted-foreground">{d}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {calendarDays.map((date, i) => {
+                  if (!date) return <div key={`empty-${i}`} className="h-8 w-8" />
+                  
+                  const isSelected = date.toDateString() === agendaDate.toDateString()
+                  const isToday = date.toDateString() === new Date().toDateString()
+                  
+                  const hasAgendamento = data.agendamentosCalendario?.some((os: any) => {
+                    const osDate = new Date(os.scheduled_at)
+                    return osDate.getDate() === date.getDate() && osDate.getMonth() === date.getMonth()
+                  })
+                  
+                  return (
+                    <div key={date.toISOString()} className="relative flex justify-center">
+                      <Button
+                        variant={isSelected ? 'default' : isToday ? 'outline' : 'ghost'}
+                        className={`h-8 w-8 p-0 font-normal text-xs ${isSelected ? '' : isToday ? 'text-primary font-bold border-primary/50' : 'text-foreground hover:bg-muted'}`}
+                        onClick={() => handleSetAgendaDate(date)}
+                      >
+                        {date.getDate()}
+                      </Button>
+                      {hasAgendamento && (
+                        <div className={`absolute bottom-0.5 w-1 h-1 rounded-full ${isSelected ? 'bg-primary-foreground' : 'bg-primary'}`} />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="border-muted/50">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
