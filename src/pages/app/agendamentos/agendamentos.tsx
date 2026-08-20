@@ -216,8 +216,8 @@ export function AgendamentosPage() {
                         <Select onValueChange={field.onChange} value={field.value}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="paid">Serviço Pago</SelectItem>
-                            <SelectItem value="demo">Demonstração (Grátis)</SelectItem>
+                            <SelectItem value="paid">Serviço Contratado</SelectItem>
+                            <SelectItem value="demo">Demonstração</SelectItem>
                           </SelectContent>
                         </Select>
                       )}
@@ -307,7 +307,7 @@ export function AgendamentosPage() {
                       <TableCell className="text-muted-foreground">{ag.technician?.name || 'Não atribuído'}</TableCell>
                       <TableCell className="text-center">
                         <Badge variant={ag.type === 'paid' ? 'default' : 'outline'}>
-                          {ag.type === 'paid' ? 'Pago' : 'Demo'}
+                          {ag.type === 'paid' ? 'Contratado' : 'Demo'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center font-bold">

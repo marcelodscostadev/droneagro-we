@@ -204,7 +204,7 @@ export function ItinerarioPdfPage() {
                     <td className="py-3 px-4 font-bold">#{os.os_number}</td>
                     <td className="py-3 px-4">{os.client?.name || '---'}</td>
                     <td className="py-3 px-4">
-                      {os.type === 'demo' ? <span className="bg-slate-200 px-2 py-1 rounded text-xs">Demonstração</span> : <span className="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs">Pago</span>}
+                      {os.type === 'demo' ? <span className="bg-slate-200 px-2 py-1 rounded text-xs">Demonstração</span> : <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">Contratado</span>}
                     </td>
                     <td className="py-3 px-4">{os.area_ha || 0} ha</td>
                     <td className="py-3 px-4 text-right font-medium">

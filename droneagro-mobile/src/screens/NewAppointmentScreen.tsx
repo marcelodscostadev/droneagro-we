@@ -128,8 +128,8 @@ export function NewAppointmentScreen({ navigation, route }: any) {
             selectedValue={type}
             onValueChange={(itemValue) => setType(itemValue)}
           >
-            <Picker.Item label="Serviço Pago" value="paid" color="#0f172a" />
-            <Picker.Item label="Demonstração (Grátis)" value="demo" color="#0f172a" />
+            <Picker.Item label="Serviço Contratado" value="paid" color="#0f172a" />
+            <Picker.Item label="Demonstração" value="demo" color="#0f172a" />
           </Picker>
         </View>
 

@@ -68,10 +68,11 @@ export function Dashboard() {
         .select('id, status, type, client_id, area_ha')
         .gte('scheduled_at', startOfMonth)
         
-      const osConcluidasMes = osMes?.filter(os => os.status === 'finished' || os.status === 'completed').length || 0
+      const osConcluidasArr = osMes?.filter(os => os.status === 'finished' || os.status === 'completed') || []
+      const osConcluidasMes = osConcluidasArr.length
       const demosMes = osMes?.filter(os => os.type === 'demo').length || 0
       
-      const uniqueClients = new Set(osMes?.map(os => os.client_id))
+      const uniqueClients = new Set(osConcluidasArr.map(os => os.client_id))
       const clientesAtendidosMes = uniqueClients.size
 
       // 6. Hectares / Mês
