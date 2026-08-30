@@ -59,6 +59,10 @@ export function ContasReceberPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
   })
 
+  const totalRecebido = transactions.filter((t: any) => t.status === 'paid').reduce((acc: number, t: any) => acc + t.amount, 0)
+  const totalPendente = transactions.filter((t: any) => t.status === 'pending').reduce((acc: number, t: any) => acc + t.amount, 0)
+  const totalGeral = transactions.reduce((acc: number, t: any) => acc + t.amount, 0)
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -70,6 +74,38 @@ export function ContasReceberPage() {
           </div>
         </div>
         <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />Nova Receita</Button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between space-y-0 pb-2">
+              <p className="text-sm font-medium">A Receber</p>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="text-2xl font-bold text-amber-500">{formatCurrency(totalPendente)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between space-y-0 pb-2">
+              <p className="text-sm font-medium">Recebido</p>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="text-2xl font-bold text-emerald-500">{formatCurrency(totalRecebido)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between space-y-0 pb-2">
+              <p className="text-sm font-medium">Total Geral</p>
+              <div className="p-1 rounded-full bg-primary/10">
+                <TrendingUp className="h-3 w-3 text-primary" />
+              </div>
+            </div>
+            <div className="text-2xl font-bold">{formatCurrency(totalGeral)}</div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card className="border-muted/50">
