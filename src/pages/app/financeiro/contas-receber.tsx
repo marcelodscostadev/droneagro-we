@@ -23,7 +23,7 @@ export function ContasReceberPage() {
     queryKey: ['transactions_income'],
     queryFn: async () => {
       const { data, error } = await supabase.from('transactions')
-        .select('*, category:financial_categories(name), cost_center:cost_centers(name)')
+        .select('*, category:financial_categories(name), cost_center:cost_centers(name), bulletin:measurement_bulletins(invoice_number, service_orders(clients(name)))')
         .eq('type', 'income')
         .order('due_date', { ascending: false })
       if (error) throw error; return data
@@ -75,11 +75,13 @@ export function ContasReceberPage() {
       <Card className="border-muted/50">
         <CardContent className="p-0">
           <Table>
-            <TableHeader><TableRow><TableHead>Descrição</TableHead><TableHead>Data</TableHead><TableHead>Categoria</TableHead><TableHead className="text-right">Valor</TableHead><TableHead className="text-center">Status</TableHead><TableHead className="text-right">Ação</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Descrição</TableHead><TableHead>Nota Fiscal</TableHead><TableHead>Cliente</TableHead><TableHead>Data</TableHead><TableHead>Categoria</TableHead><TableHead className="text-right">Valor</TableHead><TableHead className="text-center">Status</TableHead><TableHead className="text-right">Ação</TableHead></TableRow></TableHeader>
             <TableBody>
               {transactions.map((t: any) => (
                 <TableRow key={t.id}>
                   <TableCell className="font-medium">{t.description}</TableCell>
+                  <TableCell>{t.bulletin?.invoice_number || '—'}</TableCell>
+                  <TableCell>{t.bulletin?.service_orders?.clients?.name || '—'}</TableCell>
                   <TableCell>{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.category?.name || '—'}</TableCell>
                   <TableCell className="text-right font-bold text-emerald-600">{formatCurrency(t.amount)}</TableCell>
