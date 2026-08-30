@@ -78,7 +78,10 @@ export function OperacionalPage() {
   }, [boletins])
 
   const osStatusCount = useMemo(() => {
-    const counts: Record<string, number> = { pending: 0, in_progress: 0, completed: 0, cancelled: 0 }
+    const counts: Record<string, number> = { 
+      scheduled: 0, traveling: 0, in_activity: 0, in_progress: 0, pending: 0, 
+      finished: 0, completed: 0, cancelled: 0 
+    }
     osData.forEach(os => {
       counts[os.status] = (counts[os.status] || 0) + 1
     })
@@ -88,6 +91,9 @@ export function OperacionalPage() {
   if (isLoading) {
     return <div className="flex h-[400px] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
   }
+
+  const concluídas = (osStatusCount.finished || 0) + (osStatusCount.completed || 0)
+  const pendentes = (osStatusCount.scheduled || 0) + (osStatusCount.traveling || 0) + (osStatusCount.in_activity || 0) + (osStatusCount.in_progress || 0) + (osStatusCount.pending || 0)
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -118,14 +124,14 @@ export function OperacionalPage() {
           <CardContent className="p-6 flex flex-col justify-center items-center text-center space-y-2">
             <Users className="h-8 w-8 text-amber-500 mb-2" />
             <p className="text-sm text-muted-foreground font-medium">OS Concluídas</p>
-            <h3 className="text-3xl font-bold">{osStatusCount.completed}</h3>
+            <h3 className="text-3xl font-bold">{concluídas}</h3>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-6 flex flex-col justify-center items-center text-center space-y-2">
             <TrendingUp className="h-8 w-8 text-purple-500 mb-2" />
             <p className="text-sm text-muted-foreground font-medium">OS Pendentes / Em Progresso</p>
-            <h3 className="text-3xl font-bold">{osStatusCount.pending + osStatusCount.in_progress}</h3>
+            <h3 className="text-3xl font-bold">{pendentes}</h3>
           </CardContent>
         </Card>
       </div>
