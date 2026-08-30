@@ -41,6 +41,7 @@ export function BoletinsPage() {
   const [clientFilter, setClientFilter] = useState('')
   const [openEdit, setOpenEdit] = useState(false)
   const [selectedBoletim, setSelectedBoletim] = useState<any>(null)
+  const [selectedRows, setSelectedRows] = useState<string[]>([])
   
   // Expense Form state
   const [expDesc, setExpDesc] = useState('')
@@ -267,6 +268,22 @@ export function BoletinsPage() {
     return matchStatus && matchClient
   })
 
+  const toggleSelectAll = () => {
+    if (selectedRows.length === filtered.length) {
+      setSelectedRows([])
+    } else {
+      setSelectedRows(filtered.map((b: any) => b.id))
+    }
+  }
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedRows(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id])
+  }
+
+  const selectedTotal = filtered
+    .filter((b: any) => selectedRows.includes(b.id))
+    .reduce((acc: number, b: any) => acc + (Number(b.total_value) || 0), 0)
+
   function toggleRow(id: string) {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }))
   }
@@ -282,7 +299,7 @@ export function BoletinsPage() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-primary/10"><FileBarChart className="h-6 w-6 text-primary" /></div>
@@ -318,6 +335,12 @@ export function BoletinsPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-[40px] text-center">
+                  <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
+                    checked={selectedRows.length === filtered.length && filtered.length > 0}
+                    onChange={toggleSelectAll} 
+                  />
+                </TableHead>
                 <TableHead className="w-[50px]" />
                 <TableHead>Boletim</TableHead>
                 <TableHead>Cliente</TableHead>
@@ -333,13 +356,13 @@ export function BoletinsPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-24 text-center">
+                  <TableCell colSpan={11} className="h-24 text-center">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
                     Nenhum boletim encontrado.
                   </TableCell>
                 </TableRow>
@@ -351,7 +374,13 @@ export function BoletinsPage() {
 
                 return (
                   <Fragment key={b.id}>
-                    <TableRow className={cn('group', isExpanded && 'bg-muted/30')}>
+                    <TableRow className={cn('group', isExpanded && 'bg-muted/30', selectedRows.includes(b.id) && 'bg-primary/5 hover:bg-primary/10')}>
+                      <TableCell className="text-center">
+                        <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
+                          checked={selectedRows.includes(b.id)}
+                          onChange={() => toggleSelectRow(b.id)} 
+                        />
+                      </TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleRow(b.id)}>
                           {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -399,7 +428,7 @@ export function BoletinsPage() {
 
                     {isExpanded && (
                       <TableRow className="bg-muted/20 hover:bg-muted/20">
-                        <TableCell colSpan={10} className="p-4">
+                        <TableCell colSpan={11} className="p-4">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="space-y-4">
                               <h3 className="font-semibold text-sm flex items-center gap-2">
@@ -513,6 +542,15 @@ export function BoletinsPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {selectedRows.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-6 py-3 rounded-full shadow-lg flex items-center gap-4 animate-in slide-in-from-bottom-5 z-50">
+          <span className="font-medium text-sm">{selectedRows.length} selecionado(s)</span>
+          <div className="w-px h-4 bg-primary-foreground/30" />
+          <span className="font-bold">Total: {formatCurrency(selectedTotal)}</span>
+          <Button size="sm" variant="secondary" className="ml-2 h-7 px-3 text-xs" onClick={() => setSelectedRows([])}>Limpar</Button>
+        </div>
+      )}
 
       {/* Edit Values Modal */}
       <Dialog open={openEdit} onOpenChange={setOpenEdit}>
