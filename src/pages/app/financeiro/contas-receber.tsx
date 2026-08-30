@@ -16,6 +16,7 @@ import { useForm, Controller } from 'react-hook-form'
 
 export function ContasReceberPage() {
   const [open, setOpen] = useState(false)
+  const [clientFilter, setClientFilter] = useState('')
   const queryClient = useQueryClient()
   const { register, handleSubmit, control, reset } = useForm<any>({ defaultValues: { type: 'income', status: 'pending' } })
 
@@ -59,9 +60,18 @@ export function ContasReceberPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
   })
 
-  const totalRecebido = transactions.filter((t: any) => t.status === 'paid').reduce((acc: number, t: any) => acc + t.amount, 0)
-  const totalPendente = transactions.filter((t: any) => t.status === 'pending').reduce((acc: number, t: any) => acc + t.amount, 0)
-  const totalGeral = transactions.reduce((acc: number, t: any) => acc + t.amount, 0)
+  const filteredTransactions = transactions.filter((t: any) => {
+    if (!clientFilter) return true
+    const clientName = t.bulletin?.service_orders?.clients?.name || ''
+    // Handle standalone transactions via description if they mention a client
+    const desc = t.description || ''
+    return clientName.toLowerCase().includes(clientFilter.toLowerCase()) || 
+           desc.toLowerCase().includes(clientFilter.toLowerCase())
+  })
+
+  const totalRecebido = filteredTransactions.filter((t: any) => t.status === 'paid').reduce((acc: number, t: any) => acc + t.amount, 0)
+  const totalPendente = filteredTransactions.filter((t: any) => t.status === 'pending').reduce((acc: number, t: any) => acc + t.amount, 0)
+  const totalGeral = filteredTransactions.reduce((acc: number, t: any) => acc + t.amount, 0)
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -73,7 +83,15 @@ export function ContasReceberPage() {
             <p className="text-sm text-muted-foreground">Controle de receitas e cobranças</p>
           </div>
         </div>
-        <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />Nova Receita</Button>
+        <div className="flex items-center gap-3">
+          <Input 
+            placeholder="Buscar por cliente..." 
+            value={clientFilter}
+            onChange={e => setClientFilter(e.target.value)}
+            className="w-[250px]"
+          />
+          <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />Nova Receita</Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -113,7 +131,7 @@ export function ContasReceberPage() {
           <Table>
             <TableHeader><TableRow><TableHead>Descrição</TableHead><TableHead>Nota Fiscal</TableHead><TableHead>Cliente</TableHead><TableHead>Data</TableHead><TableHead>Categoria</TableHead><TableHead className="text-right">Valor</TableHead><TableHead className="text-center">Status</TableHead><TableHead className="text-right">Ação</TableHead></TableRow></TableHeader>
             <TableBody>
-              {transactions.map((t: any) => (
+              {filteredTransactions.map((t: any) => (
                 <TableRow key={t.id}>
                   <TableCell className="font-medium">{t.description}</TableCell>
                   <TableCell>{t.bulletin?.invoice_number || '—'}</TableCell>

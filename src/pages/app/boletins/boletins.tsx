@@ -38,6 +38,7 @@ type EditFormData = z.infer<typeof editSchema>
 export function BoletinsPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [statusFilter, setStatusFilter] = useState('ALL')
+  const [clientFilter, setClientFilter] = useState('')
   const [openEdit, setOpenEdit] = useState(false)
   const [selectedBoletim, setSelectedBoletim] = useState<any>(null)
   
@@ -260,7 +261,11 @@ export function BoletinsPage() {
     }
   })
 
-  const filtered = statusFilter === 'ALL' ? boletins : boletins.filter((b: any) => b.status === statusFilter)
+  const filtered = boletins.filter((b: any) => {
+    const matchStatus = statusFilter === 'ALL' || b.status === statusFilter
+    const matchClient = clientFilter === '' || b.client?.name?.toLowerCase().includes(clientFilter.toLowerCase())
+    return matchStatus && matchClient
+  })
 
   function toggleRow(id: string) {
     setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }))
@@ -289,6 +294,12 @@ export function BoletinsPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Input 
+            placeholder="Buscar por cliente..." 
+            value={clientFilter}
+            onChange={e => setClientFilter(e.target.value)}
+            className="w-[200px]"
+          />
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
             <SelectContent>
