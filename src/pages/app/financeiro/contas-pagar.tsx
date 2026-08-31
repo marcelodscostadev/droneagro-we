@@ -1,4 +1,4 @@
-import { Receipt, Plus, CheckCircle } from 'lucide-react'
+import { Receipt, Plus, CheckCircle, FileText, Download, X } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,9 +13,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useForm, Controller } from 'react-hook-form'
+import { generateFinancialReport, downloadPdf } from '@/lib/pdf-report'
 
 export function ContasPagarPage() {
   const [open, setOpen] = useState(false)
+  const [openPdf, setOpenPdf] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfDoc, setPdfDoc] = useState<any>(null)
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   
   const today = new Date()
@@ -138,6 +142,50 @@ export function ContasPagarPage() {
     return true
   })
 
+  function handleGeneratePdf() {
+    const data = filteredAndTabbedTransactions.map((t: any) => ({
+      descricao: t.description,
+      emissao: t.created_at ? formatDate(t.created_at) : '—',
+      vencimento: t.due_date ? formatDate(t.due_date) : '—',
+      pagamento: t.paid_at ? formatDate(t.paid_at) : '—',
+      categoria: t.category?.name || '—',
+      centro: t.cost_center?.name || '—',
+      valor: formatCurrency(t.amount),
+      status: t.status === 'paid' ? 'Pago' : 'Pendente',
+    }))
+
+    const totalPago = filteredAndTabbedTransactions.filter((t: any) => t.status === 'paid').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
+    const totalPendente = filteredAndTabbedTransactions.filter((t: any) => t.status === 'pending').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
+    const totalGeral = filteredAndTabbedTransactions.reduce((acc: number, t: any) => acc + Number(t.amount), 0)
+
+    const doc = generateFinancialReport({
+      title: 'Relatório de Contas a Pagar',
+      subtitle: `Emitido com ${data.length} lançamento(s) | Pendente: ${formatCurrency(totalPendente)} | Pago: ${formatCurrency(totalPago)} | Total: ${formatCurrency(totalGeral)}`,
+      columns: [
+        { header: 'Descrição', dataKey: 'descricao' },
+        { header: 'Emissão', dataKey: 'emissao', width: 22, align: 'center' },
+        { header: 'Vencimento', dataKey: 'vencimento', width: 24, align: 'center' },
+        { header: 'Pagamento', dataKey: 'pagamento', width: 24, align: 'center' },
+        { header: 'Categoria', dataKey: 'categoria' },
+        { header: 'Centro de Custo', dataKey: 'centro' },
+        { header: 'Valor (R$)', dataKey: 'valor', width: 30, align: 'right' },
+        { header: 'Status', dataKey: 'status', width: 18, align: 'center' },
+      ],
+      rows: data,
+      summaryRows: [
+        { label: 'Pendente:', value: formatCurrency(totalPendente), color: [245, 158, 11] },
+        { label: 'Pago:', value: formatCurrency(totalPago), color: [16, 185, 129] },
+        { label: 'Total Geral:', value: formatCurrency(totalGeral) },
+      ],
+    })
+
+    const blob = doc.output('blob')
+    const url = URL.createObjectURL(blob)
+    setPdfUrl(url)
+    setPdfDoc(doc)
+    setOpenPdf(true)
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <div className="flex items-center justify-between">
@@ -148,7 +196,10 @@ export function ContasPagarPage() {
             <p className="text-sm text-muted-foreground">Controle de despesas e pagamentos</p>
           </div>
         </div>
-        <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />Nova Despesa</Button>
+        <Button variant="outline" onClick={handleGeneratePdf}>
+            <FileText className="h-4 w-4 mr-2" />Emitir Relatório
+          </Button>
+          <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />Nova Despesa</Button>
       </div>
 
       <div className="flex items-center gap-4">
@@ -308,6 +359,26 @@ export function ContasPagarPage() {
             </div>
             <DialogFooter><Button type="submit">Salvar</Button></DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* PDF Preview Dialog */}
+      <Dialog open={openPdf} onOpenChange={(v) => { setOpenPdf(v); if (!v && pdfUrl) URL.revokeObjectURL(pdfUrl) }}>
+        <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b flex-row items-center justify-between">
+            <DialogTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-primary" />Pré-visualização — Contas a Pagar</DialogTitle>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => pdfDoc && downloadPdf(pdfDoc, `contas-pagar-${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`)}>
+                <Download className="h-4 w-4 mr-2" />Baixar PDF
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setOpenPdf(false)}><X className="h-4 w-4" /></Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {pdfUrl && (
+              <iframe src={pdfUrl} className="w-full h-full" title="PDF Preview" />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
