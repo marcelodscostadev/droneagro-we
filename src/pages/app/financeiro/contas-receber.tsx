@@ -55,7 +55,9 @@ export function ContasReceberPage() {
 
   const markPaid = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('transactions').update({ status: 'paid' }).eq('id', id)
+      const { error } = await supabase.from('transactions')
+        .update({ status: 'paid', paid_at: new Date().toISOString() })
+        .eq('id', id)
       if (error) throw error
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
@@ -159,6 +161,7 @@ export function ContasReceberPage() {
                 <TableHead>Cliente</TableHead>
                 <TableHead>Emissão</TableHead>
                 <TableHead>Vencimento</TableHead>
+                <TableHead>Pagamento</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
                 <TableHead className="text-center">Status</TableHead>
@@ -179,6 +182,7 @@ export function ContasReceberPage() {
                   <TableCell>{t.bulletin?.service_orders?.clients?.name || '—'}</TableCell>
                   <TableCell>{formatDate(t.created_at)}</TableCell>
                   <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
+                  <TableCell>{t.paid_at ? formatDate(t.paid_at) : '—'}</TableCell>
                   <TableCell>{t.category?.name || '—'}</TableCell>
                   <TableCell className="text-right font-bold text-emerald-600">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-center">
