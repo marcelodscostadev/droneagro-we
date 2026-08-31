@@ -71,7 +71,8 @@ export function ComissoesPage() {
                   />
                 </TableHead>
                 <TableHead>Descrição</TableHead>
-                <TableHead>Data</TableHead>
+                <TableHead>Emissão</TableHead>
+                <TableHead>Vencimento</TableHead>
                 <TableHead>Técnico</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
                 <TableHead className="text-center">Status</TableHead>
@@ -88,7 +89,8 @@ export function ComissoesPage() {
                     />
                   </TableCell>
                   <TableCell className="font-medium">{t.description}</TableCell>
-                  <TableCell>{formatDate(t.due_date)}</TableCell>
+                  <TableCell>{formatDate(t.created_at)}</TableCell>
+                  <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.technician?.name || '—'}</TableCell>
                   <TableCell className="text-right font-bold text-amber-600">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-center">

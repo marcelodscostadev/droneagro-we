@@ -157,7 +157,8 @@ export function ContasReceberPage() {
                 <TableHead>Descrição</TableHead>
                 <TableHead>Nota Fiscal</TableHead>
                 <TableHead>Cliente</TableHead>
-                <TableHead>Data</TableHead>
+                <TableHead>Emissão</TableHead>
+                <TableHead>Vencimento</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
                 <TableHead className="text-center">Status</TableHead>
@@ -176,7 +177,8 @@ export function ContasReceberPage() {
                   <TableCell className="font-medium">{t.description}</TableCell>
                   <TableCell>{t.bulletin?.invoice_number || '—'}</TableCell>
                   <TableCell>{t.bulletin?.service_orders?.clients?.name || '—'}</TableCell>
-                  <TableCell>{formatDate(t.due_date)}</TableCell>
+                  <TableCell>{formatDate(t.created_at)}</TableCell>
+                  <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.category?.name || '—'}</TableCell>
                   <TableCell className="text-right font-bold text-emerald-600">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-center">

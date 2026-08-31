@@ -111,7 +111,8 @@ export function ContasPagarPage() {
                   />
                 </TableHead>
                 <TableHead>Descrição</TableHead>
-                <TableHead>Data</TableHead>
+                <TableHead>Emissão</TableHead>
+                <TableHead>Vencimento</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead>Centro de Custo</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
@@ -129,7 +130,8 @@ export function ContasPagarPage() {
                     />
                   </TableCell>
                   <TableCell className="font-medium">{t.description}</TableCell>
-                  <TableCell>{formatDate(t.due_date)}</TableCell>
+                  <TableCell>{formatDate(t.created_at)}</TableCell>
+                  <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.category?.name || '—'}</TableCell>
                   <TableCell>{t.cost_center?.name || '—'}</TableCell>
                   <TableCell className="text-right font-bold text-red-600">{formatCurrency(t.amount)}</TableCell>
