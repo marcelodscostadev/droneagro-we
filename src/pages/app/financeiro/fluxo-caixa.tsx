@@ -26,6 +26,22 @@ export function FluxoCaixaPage() {
     }
   })
 
+  // Query 1: all transactions BEFORE the selected month to compute opening balance
+  const { data: priorTransactions = [] } = useQuery({
+    queryKey: ['transactions_prior', monthFilter],
+    queryFn: async () => {
+      if (!monthFilter) return []
+      const [year, month] = monthFilter.split('-')
+      const start = `${year}-${month}-01`
+      const { data, error } = await supabase.from('transactions')
+        .select('type, amount')
+        .eq('status', 'paid')
+        .lt('due_date', start)
+      if (error) throw error; return data
+    }
+  })
+
+  // Query 2: transactions WITHIN the selected month
   const { data: transactions = [] } = useQuery({
     queryKey: ['transactions_paid', monthFilter],
     queryFn: async () => {
@@ -57,7 +73,13 @@ export function FluxoCaixaPage() {
   })
 
   const dates = Object.keys(flowByDate).sort()
-  let runningBalance = Number(settings?.initial_balance || 0)
+
+  // Opening balance = initial_balance + all income before this month - all expenses before this month
+  const priorIncome = priorTransactions.filter((t: any) => t.type === 'income').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
+  const priorExpense = priorTransactions.filter((t: any) => t.type === 'expense').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
+  const openingBalance = Number(settings?.initial_balance || 0) + priorIncome - priorExpense
+
+  let runningBalance = openingBalance
 
   const totalIncome = transactions.filter((t: any) => t.type === 'income').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
   const totalExpense = transactions.filter((t: any) => t.type === 'expense').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
@@ -160,9 +182,9 @@ export function FluxoCaixaPage() {
         </Card>
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="p-4 text-center">
-            <p className="text-sm font-medium text-muted-foreground mb-1">Saldo do Período</p>
-            <p className={`text-2xl font-bold ${(totalIncome - totalExpense) >= 0 ? 'text-primary' : 'text-red-500'}`}>
-              {formatCurrency(Number(settings?.initial_balance || 0) + totalIncome - totalExpense)}
+            <p className="text-sm font-medium text-muted-foreground mb-1">Saldo Final do Período</p>
+            <p className={`text-2xl font-bold ${(openingBalance + totalIncome - totalExpense) >= 0 ? 'text-primary' : 'text-red-500'}`}>
+              {formatCurrency(openingBalance + totalIncome - totalExpense)}
             </p>
           </CardContent>
         </Card>
@@ -183,15 +205,15 @@ export function FluxoCaixaPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {/* Saldo Inicial Row */}
+              {/* Opening Balance Row */}
               <TableRow className="bg-muted/30">
                 <TableCell />
-                <TableCell className="font-medium italic">Saldo Inicial</TableCell>
-                <TableCell />
+                <TableCell className="font-medium italic text-muted-foreground">Saldo Anterior ao Período</TableCell>
+                <TableCell className="text-xs text-muted-foreground italic">Carry-over de meses anteriores</TableCell>
                 <TableCell className="text-right">—</TableCell>
                 <TableCell className="text-right">—</TableCell>
                 <TableCell className="text-right">—</TableCell>
-                <TableCell className="text-right font-bold text-primary">{formatCurrency(runningBalance)}</TableCell>
+                <TableCell className={`text-right font-bold ${openingBalance >= 0 ? 'text-primary' : 'text-red-500'}`}>{formatCurrency(openingBalance)}</TableCell>
               </TableRow>
 
               {dates.map((date) => {
