@@ -17,6 +17,11 @@ import { useForm, Controller } from 'react-hook-form'
 export function ContasPagarPage() {
   const [open, setOpen] = useState(false)
   const [selectedRows, setSelectedRows] = useState<string[]>([])
+  
+  const today = new Date()
+  const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
+  const [tabFilter, setTabFilter] = useState<'ALL'|'OVERDUE'|'TODAY'|'FUTURE'|'PAID'>('ALL')
+  
   const queryClient = useQueryClient()
   const { register, handleSubmit, control, reset } = useForm<any>({ defaultValues: { type: 'expense', status: 'pending' } })
 
@@ -88,6 +93,51 @@ export function ContasPagarPage() {
     .filter((t: any) => selectedRows.includes(t.id))
     .reduce((acc: number, t: any) => acc + t.amount, 0)
 
+  const todayStr = new Date().toISOString().split('T')[0]
+
+  const filteredTransactions = transactions.filter((t: any) => {
+    if (!monthFilter) return true
+    // monthFilter is YYYY-MM
+    // match either due_date or created_at being in that month? Usually we filter by due_date for Contas a Pagar
+    return t.due_date && t.due_date.startsWith(monthFilter)
+  })
+
+  let vencidos = 0
+  let vencemHoje = 0
+  let aVencer = 0
+  let pagos = 0
+  let totalPeriodo = 0
+
+  filteredTransactions.forEach((t: any) => {
+    const val = Number(t.amount) || 0
+    totalPeriodo += val
+    
+    if (t.status === 'paid') {
+      pagos += val
+    } else {
+      if (t.due_date < todayStr) {
+        vencidos += val
+      } else if (t.due_date === todayStr) {
+        vencemHoje += val
+      } else {
+        aVencer += val
+      }
+    }
+  })
+
+  const filteredAndTabbedTransactions = filteredTransactions.filter((t: any) => {
+    if (tabFilter === 'ALL') return true
+    if (tabFilter === 'PAID') return t.status === 'paid'
+    
+    if (t.status === 'paid') return false // from here on, only pending
+    
+    if (tabFilter === 'OVERDUE') return t.due_date < todayStr
+    if (tabFilter === 'TODAY') return t.due_date === todayStr
+    if (tabFilter === 'FUTURE') return t.due_date > todayStr
+    
+    return true
+  })
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <div className="flex items-center justify-between">
@@ -99,6 +149,72 @@ export function ContasPagarPage() {
           </div>
         </div>
         <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />Nova Despesa</Button>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <label className="text-sm font-medium text-muted-foreground">Filtrar por Mês:</label>
+        <input 
+          type="month" 
+          value={monthFilter}
+          onChange={(e) => {
+            setMonthFilter(e.target.value)
+            setTabFilter('ALL') // reset tab on month change
+          }}
+          className="flex h-10 w-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        {monthFilter && (
+          <Button variant="ghost" size="sm" onClick={() => setMonthFilter('')} className="text-muted-foreground">
+            Ver Todo o Histórico
+          </Button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-5 gap-4">
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'OVERDUE' ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Vencidos (R$)</p>
+            <p className="text-2xl font-bold text-red-500">{formatCurrency(vencidos)}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'TODAY' ? 'border-orange-500 ring-1 ring-orange-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'TODAY' ? 'ALL' : 'TODAY')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Vencem hoje (R$)</p>
+            <p className="text-2xl font-bold text-orange-500">{formatCurrency(vencemHoje)}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'FUTURE' ? 'border-blue-500 ring-1 ring-blue-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'FUTURE' ? 'ALL' : 'FUTURE')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">A vencer (R$)</p>
+            <p className="text-2xl font-bold text-blue-500">{formatCurrency(aVencer)}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'PAID' ? 'border-green-500 ring-1 ring-green-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'PAID' ? 'ALL' : 'PAID')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Pagos (R$)</p>
+            <p className="text-2xl font-bold text-green-500">{formatCurrency(pagos)}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'ALL' ? 'border-primary ring-1 ring-primary' : ''}`}
+          onClick={() => setTabFilter('ALL')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Total do período (R$)</p>
+            <p className="text-2xl font-bold text-primary">{formatCurrency(totalPeriodo)}</p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card className="border-muted/50">
@@ -124,7 +240,7 @@ export function ContasPagarPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {transactions.map((t: any) => (
+              {filteredAndTabbedTransactions.map((t: any) => (
                 <TableRow key={t.id} className={selectedRows.includes(t.id) ? "bg-primary/5 hover:bg-primary/10" : ""}>
                   <TableCell className="text-center">
                     <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
