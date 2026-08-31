@@ -196,10 +196,12 @@ export function ContasPagarPage() {
             <p className="text-sm text-muted-foreground">Controle de despesas e pagamentos</p>
           </div>
         </div>
-        <Button variant="outline" onClick={handleGeneratePdf}>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={handleGeneratePdf}>
             <FileText className="h-4 w-4 mr-2" />Emitir Relatório
           </Button>
           <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />Nova Despesa</Button>
+        </div>
       </div>
 
       <div className="flex items-center gap-4">
