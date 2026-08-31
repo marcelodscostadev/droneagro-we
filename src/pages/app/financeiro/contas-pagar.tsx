@@ -28,7 +28,7 @@ export function ContasPagarPage() {
         .eq('type', 'expense')
         // Hide auto commissions from here if they have a specific format, but the user didn't request that exactly. 
         // We will show all expenses here.
-        .order('due_date', { ascending: false })
+        .order('due_date', { ascending: true })
       if (error) throw error; return data
     }
   })
