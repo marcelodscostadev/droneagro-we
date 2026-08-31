@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ArrowDown, ArrowUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 const STATUS_MAP: Record<string, { label: string; variant: 'warning' | 'success' | 'destructive' | 'outline' | 'secondary' }> = {
@@ -39,6 +39,7 @@ export function BoletinsPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [clientFilter, setClientFilter] = useState('')
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [openEdit, setOpenEdit] = useState(false)
   const [selectedBoletim, setSelectedBoletim] = useState<any>(null)
   const [selectedRows, setSelectedRows] = useState<string[]>([])
@@ -266,6 +267,10 @@ export function BoletinsPage() {
     const matchStatus = statusFilter === 'ALL' || b.status === statusFilter
     const matchClient = clientFilter === '' || b.client?.name?.toLowerCase().includes(clientFilter.toLowerCase())
     return matchStatus && matchClient
+  }).sort((a: any, b: any) => {
+    const dateA = new Date(a.service_order?.scheduled_at || a.created_at).getTime()
+    const dateB = new Date(b.service_order?.scheduled_at || b.created_at).getTime()
+    return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
   })
 
   const toggleSelectAll = () => {
@@ -345,7 +350,19 @@ export function BoletinsPage() {
                 <TableHead>Boletim</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Técnico</TableHead>
-                <TableHead>Data OS</TableHead>
+                <TableHead 
+                  className="cursor-pointer hover:bg-muted/20 select-none group" 
+                  onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                >
+                  <div className="flex items-center gap-1">
+                    Data OS
+                    {sortOrder === 'desc' ? (
+                      <ArrowDown className="h-3 w-3 text-muted-foreground group-hover:text-foreground" />
+                    ) : (
+                      <ArrowUp className="h-3 w-3 text-muted-foreground group-hover:text-foreground" />
+                    )}
+                  </div>
+                </TableHead>
                 <TableHead className="text-center">Hectares</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-right">Comissão</TableHead>
