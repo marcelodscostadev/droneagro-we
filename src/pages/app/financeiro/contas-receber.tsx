@@ -1,4 +1,4 @@
-import { TrendingUp, Plus, CheckCircle, FileText, Download, X } from 'lucide-react'
+import { TrendingUp, Plus, CheckCircle, FileText, Download, X, Edit, Trash2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -21,7 +21,9 @@ export function ContasReceberPage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pdfDoc, setPdfDoc] = useState<any>(null)
   const [clientFilter, setClientFilter] = useState('')
-  const [selectedRows, setSelectedRows] = useState<string[]>([])
+  const [editingTransId, setEditingTransId] = useState<string | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [transToDelete, setTransToDelete] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const { register, handleSubmit, control, reset } = useForm<any>({ defaultValues: { type: 'income', status: 'pending' } })
 
@@ -56,6 +58,69 @@ export function ContasReceberPage() {
       reset()
     }
   })
+
+  const updateTrans = useMutation({
+    mutationFn: async (data: any) => {
+      const { id, ...rest } = data
+      const { error } = await supabase.from('transactions').update(rest).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Receita atualizada!')
+      queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+      setOpen(false)
+      setEditingTransId(null)
+      reset()
+    }
+  })
+
+  const deleteTrans = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('transactions').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Receita excluída!')
+      queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+      setDeleteOpen(false)
+      setTransToDelete(null)
+    }
+  })
+
+  const onSubmit = (d: any) => {
+    const payload = { ...d }
+    if (payload.created_at_date) {
+      payload.created_at = new Date(payload.created_at_date + 'T12:00:00Z').toISOString()
+      delete payload.created_at_date
+    }
+    
+    if (editingTransId) {
+      updateTrans.mutate({ id: editingTransId, ...payload })
+    } else {
+      payload.type = 'income'
+      payload.status = 'pending'
+      createTrans.mutate(payload)
+    }
+  }
+
+  const handleEdit = (t: any) => {
+    setEditingTransId(t.id)
+    reset({
+      description: t.description,
+      amount: t.amount,
+      due_date: t.due_date ? t.due_date.split('T')[0] : '',
+      created_at_date: t.created_at ? t.created_at.split('T')[0] : '',
+      category_id: t.category_id,
+      status: t.status,
+      type: t.type
+    })
+    setOpen(true)
+  }
+
+  const handleDelete = (id: string) => {
+    setTransToDelete(id)
+    setDeleteOpen(true)
+  }
 
   const markPaid = useMutation({
     mutationFn: async (id: string) => {
@@ -158,7 +223,13 @@ export function ContasReceberPage() {
           <Button variant="outline" onClick={handleGeneratePdf}>
             <FileText className="h-4 w-4 mr-2" />Emitir Relatório
           </Button>
-          <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4 mr-2" />Nova Receita</Button>
+          <Button onClick={() => {
+            setEditingTransId(null)
+            reset({ type: 'income', status: 'pending', created_at_date: new Date().toISOString().split('T')[0] })
+            setOpen(true)
+          }}>
+            <Plus className="h-4 w-4 mr-2" />Nova Receita
+          </Button>
         </div>
       </div>
 
@@ -237,8 +308,14 @@ export function ContasReceberPage() {
                   <TableCell className="text-center">
                     <Badge variant={t.status === 'paid' ? 'success' : 'warning'}>{t.status === 'paid' ? 'Recebido' : 'Pendente'}</Badge>
                   </TableCell>
-                  <TableCell className="text-right">
-                    {t.status === 'pending' && <Button variant="outline" size="sm" onClick={() => markPaid.mutate(t.id)}><CheckCircle className="h-4 w-4 mr-1"/> Marcar Recebido</Button>}
+                  <TableCell className="text-right flex items-center justify-end gap-2">
+                    {t.status === 'pending' && <Button variant="outline" size="sm" onClick={() => markPaid.mutate(t.id)}><CheckCircle className="h-4 w-4 mr-1"/> Recebido</Button>}
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEdit(t)}>
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600" onClick={() => handleDelete(t.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -256,26 +333,55 @@ export function ContasReceberPage() {
         </div>
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(v) => {
+        setOpen(v)
+        if (!v) {
+          setEditingTransId(null)
+          reset()
+        }
+      }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Nova Conta a Receber</DialogTitle></DialogHeader>
-          <form onSubmit={handleSubmit((d) => createTrans.mutate(d))} className="space-y-4">
+          <DialogHeader><DialogTitle>{editingTransId ? 'Editar Conta a Receber' : 'Nova Conta a Receber'}</DialogTitle></DialogHeader>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2"><Label>Descrição</Label><Input {...register('description', { required: true })} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Valor (R$)</Label><Input type="number" step="0.01" {...register('amount', { required: true })} /></div>
-              <div className="space-y-2"><Label>Data</Label><Input type="date" {...register('due_date', { required: true })} /></div>
+              <div className="space-y-2">
+                <Label>Categoria</Label>
+                <Controller name="category_id" control={control} render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>{categories.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                )} />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Categoria</Label>
-              <Controller name="category_id" control={control} render={({ field }) => (
-                <Select onValueChange={field.onChange} value={field.value}>
-                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                  <SelectContent>{categories.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-                </Select>
-              )} />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Emissão</Label><Input type="date" {...register('created_at_date', { required: true })} /></div>
+              <div className="space-y-2"><Label>Vencimento</Label><Input type="date" {...register('due_date', { required: true })} /></div>
             </div>
-            <DialogFooter><Button type="submit">Salvar</Button></DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button type="submit">{editingTransId ? 'Atualizar' : 'Salvar'}</Button>
+            </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir Conta</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir esta conta a receber? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end gap-2 mt-4">
+            <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
+            <Button type="button" variant="destructive" onClick={() => transToDelete && deleteTrans.mutate(transToDelete)}>
+              Sim, Excluir
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       {/* PDF Preview Dialog */}
