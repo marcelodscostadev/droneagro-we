@@ -21,6 +21,7 @@ export function ContasReceberPage() {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pdfDoc, setPdfDoc] = useState<any>(null)
   const [clientFilter, setClientFilter] = useState('')
+  const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [editingTransId, setEditingTransId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [transToDelete, setTransToDelete] = useState<string | null>(null)
