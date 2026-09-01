@@ -375,7 +375,9 @@ export function ContasPagarPage() {
                       onChange={() => toggleSelectRow(t.id)} 
                     />
                   </TableCell>
-                  <TableCell className="font-medium">{t.description}</TableCell>
+                  <TableCell className="font-medium max-w-[150px] sm:max-w-[200px] md:max-w-[300px] truncate" title={t.description}>
+                    {t.description}
+                  </TableCell>
                   <TableCell>{formatDate(t.created_at)}</TableCell>
                   <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.paid_at ? formatDate(t.paid_at) : '—'}</TableCell>

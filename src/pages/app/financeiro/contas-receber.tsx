@@ -298,9 +298,13 @@ export function ContasReceberPage() {
                       onChange={() => toggleSelectRow(t.id)} 
                     />
                   </TableCell>
-                  <TableCell className="font-medium">{t.description}</TableCell>
+                  <TableCell className="font-medium max-w-[120px] sm:max-w-[150px] md:max-w-[250px] truncate" title={t.description}>
+                    {t.description}
+                  </TableCell>
                   <TableCell>{t.bulletin?.invoice_number || '—'}</TableCell>
-                  <TableCell>{t.bulletin?.service_orders?.clients?.name || '—'}</TableCell>
+                  <TableCell className="max-w-[120px] sm:max-w-[150px] md:max-w-[200px] truncate" title={t.bulletin?.service_orders?.clients?.name || '—'}>
+                    {t.bulletin?.service_orders?.clients?.name || '—'}
+                  </TableCell>
                   <TableCell>{formatDate(t.created_at)}</TableCell>
                   <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.paid_at ? formatDate(t.paid_at) : '—'}</TableCell>
