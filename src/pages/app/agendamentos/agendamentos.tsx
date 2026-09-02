@@ -1,4 +1,4 @@
-import { CalendarDays, Plus, Filter, Loader2, RefreshCcw, DollarSign, CheckCircle, CalendarClock, Bell, XCircle } from 'lucide-react'
+import { CalendarDays, Plus, Filter, Loader2, RefreshCcw, DollarSign, CheckCircle, CalendarClock, Bell, XCircle, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -219,6 +219,22 @@ export function AgendamentosPage() {
       }
     },
     onError: () => toast.error('Erro ao cancelar agendamento.'),
+  })
+
+  // ── Excluir agendamento (Permanente) ───────────────────────────
+  const excluirOS = useMutation({
+    mutationFn: async (agId: string) => {
+      const { error } = await supabase
+        .from('service_orders')
+        .delete()
+        .eq('id', agId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Agendamento excluído do sistema.')
+      queryClient.invalidateQueries({ queryKey: ['agendamentos'] })
+    },
+    onError: () => toast.error('Erro ao excluir agendamento.'),
   })
 
   const handleClientChange = (clientId: string) => {
@@ -486,6 +502,20 @@ export function AgendamentosPage() {
                             </Button>
                           )}
                           <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => openEdit(ag)}>Editar</Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950 h-8 px-2"
+                            onClick={() => {
+                              if (confirm('Atenção: Tem certeza que deseja EXCLUIR PERMANENTEMENTE este agendamento do banco de dados? (O cliente NÃO será notificado)')) {
+                                excluirOS.mutate(ag.id)
+                              }
+                            }}
+                            disabled={excluirOS.isPending}
+                            title="Excluir Permanentemente"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
