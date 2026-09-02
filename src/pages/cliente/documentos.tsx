@@ -30,11 +30,41 @@ export function ClientDocumentos() {
     enabled: !!clientId,
   })
 
-  const openDocs = docs.filter((d: any) => {
-    // Procura a transação de receita (income) deste boletim
+  // Encontra todas as notas que têm pelo menos uma transação paga
+  const paidInvoiceNumbers = new Set(
+    docs.filter((d: any) => {
+      const inc = d.transactions?.find((t: any) => t.type === 'income')
+      return inc && inc.status === 'paid'
+    }).map((d: any) => d.invoice_number).filter(Boolean)
+  )
+
+  const openDocs: any[] = []
+  const seenInvoices = new Map<string, any>()
+
+  docs.forEach((d: any) => {
+    // É considerado pago se a própria transação for paga OU se compartilhar o mesmo número de uma nota paga
     const inc = d.transactions?.find((t: any) => t.type === 'income')
-    // Se não existir transação (algo errado) ou o status não for "paid", mostra.
-    return !inc || inc.status !== 'paid'
+    const isPaid = (inc && inc.status === 'paid') || (d.invoice_number && paidInvoiceNumbers.has(d.invoice_number))
+
+    if (!isPaid) {
+      if (d.invoice_number) {
+        if (!seenInvoices.has(d.invoice_number)) {
+          seenInvoices.set(d.invoice_number, d)
+          openDocs.push(d)
+        } else {
+          // Se já existe, garante que vamos usar o que tem os URLs dos arquivos!
+          const existing = seenInvoices.get(d.invoice_number)
+          if (!existing.invoice_url && d.invoice_url) {
+            existing.invoice_url = d.invoice_url
+          }
+          if (!existing.boleto_url && d.boleto_url) {
+            existing.boleto_url = d.boleto_url
+          }
+        }
+      } else {
+        openDocs.push(d)
+      }
+    }
   })
 
   const comBoleto = openDocs.filter((d: any) => d.boleto_url)
