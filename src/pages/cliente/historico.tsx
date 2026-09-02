@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { Link } from 'react-router-dom'
 import { History, Sprout, FileDown, Loader2, Filter } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -178,8 +179,8 @@ export function ClientHistorico() {
                   <div className="flex items-center gap-2 shrink-0">
                     <Badge variant="success" className="text-[11px]">Concluído</Badge>
                     {temBoletim && (
-                      <a
-                        href={boletim.pdf_url || '#'}
+                      <Link
+                        to={`/boletins/${boletim.id}/pdf`}
                         target="_blank"
                         rel="noreferrer"
                         title="Baixar Boletim"
@@ -187,7 +188,7 @@ export function ClientHistorico() {
                         <Button size="icon" variant="outline" className="h-8 w-8">
                           <FileDown className="h-3.5 w-3.5" />
                         </Button>
-                      </a>
+                      </Link>
                     )}
                   </div>
                 </CardContent>
