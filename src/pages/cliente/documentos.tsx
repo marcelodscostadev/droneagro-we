@@ -38,7 +38,7 @@ export function ClientDocumentos() {
   })
 
   const comBoleto = openDocs.filter((d: any) => d.boleto_url)
-  const comNota   = openDocs.filter((d: any) => d.invoice_url)
+  const comNota   = openDocs.filter((d: any) => d.invoice_url || d.invoice_number)
 
   const lista = tab === 'boletos' ? comBoleto : comNota
 
@@ -152,18 +152,32 @@ export function ClientDocumentos() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Badge variant="success" className="text-[11px] hidden sm:inline-flex">Disponível</Badge>
-                    <a href={url} target="_blank" rel="noreferrer">
-                      <Button size="sm" variant="outline" className="h-8 gap-1.5">
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">Abrir</span>
+                    {url ? (
+                      <Badge variant="success" className="text-[11px] hidden sm:inline-flex">Disponível</Badge>
+                    ) : (
+                      <Badge variant="warning" className="text-[11px] hidden sm:inline-flex">Aguardando Arquivo</Badge>
+                    )}
+                    
+                    {url ? (
+                      <>
+                        <a href={url} target="_blank" rel="noreferrer">
+                          <Button size="sm" variant="outline" className="h-8 gap-1.5">
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Abrir</span>
+                          </Button>
+                        </a>
+                        <a href={url} download target="_blank" rel="noreferrer">
+                          <Button size="icon" variant="outline" className="h-8 w-8">
+                            <FileDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </a>
+                      </>
+                    ) : (
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5" disabled>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span className="hidden sm:inline">Em processamento</span>
                       </Button>
-                    </a>
-                    <a href={url} download target="_blank" rel="noreferrer">
-                      <Button size="icon" variant="outline" className="h-8 w-8">
-                        <FileDown className="h-3.5 w-3.5" />
-                      </Button>
-                    </a>
+                    )}
                   </div>
                 </CardContent>
               </Card>
