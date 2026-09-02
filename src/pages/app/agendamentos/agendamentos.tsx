@@ -1,4 +1,4 @@
-import { CalendarDays, Plus, Filter, Loader2, RefreshCcw, DollarSign, CheckCircle, CalendarClock, Bell } from 'lucide-react'
+import { CalendarDays, Plus, Filter, Loader2, RefreshCcw, DollarSign, CheckCircle, CalendarClock, Bell, XCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -187,6 +187,38 @@ export function AgendamentosPage() {
       }
     },
     onError: () => toast.error('Erro ao propor reagendamento.'),
+  })
+
+  // ── Cancelar agendamento ───────────────────────────────────────
+  const cancelarOS = useMutation({
+    mutationFn: async (ag: any) => {
+      const { error } = await supabase
+        .from('service_orders')
+        .update({ status: 'cancelled' })
+        .eq('id', ag.id)
+      if (error) throw error
+    },
+    onSuccess: async (_, ag) => {
+      toast.success('Agendamento cancelado.')
+      queryClient.invalidateQueries({ queryKey: ['agendamentos'] })
+      // Buscar e-mail do cliente
+      if (ag.client_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('email, name')
+          .eq('client_id', ag.client_id)
+          .eq('role', 'client')
+          .maybeSingle()
+        if (profile) {
+          await sendClientEmail('cancelamento', {
+            client_email: profile.email,
+            client_name: profile.name || ag.client?.name,
+            scheduled_at: ag.scheduled_at,
+          })
+        }
+      }
+    },
+    onError: () => toast.error('Erro ao cancelar agendamento.'),
   })
 
   const handleClientChange = (clientId: string) => {
@@ -434,6 +466,24 @@ export function AgendamentosPage() {
                                 Reagendar
                               </Button>
                             </>
+                          )}
+                          {ag.status !== 'cancelled' && ag.status !== 'completed' && ag.status !== 'finished' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950 h-8 px-2 text-xs font-semibold"
+                              onClick={() => {
+                                if (confirm('Tem certeza que deseja cancelar este agendamento? O cliente será notificado por e-mail.')) {
+                                  cancelarOS.mutate(ag)
+                                }
+                              }}
+                              disabled={cancelarOS.isPending}
+                              title="Cancelar agendamento"
+                            >
+                              <XCircle className="h-3.5 w-3.5 mr-1 hidden sm:block" />
+                              <span className="hidden sm:inline">Cancelar</span>
+                              <XCircle className="h-4 w-4 sm:hidden" />
+                            </Button>
                           )}
                           <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => openEdit(ag)}>Editar</Button>
                         </div>
