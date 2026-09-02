@@ -57,6 +57,8 @@ export function BoletinsPage() {
     due_date: '',
     invoice_file: null as File | null,
     boleto_file: null as File | null,
+    remove_invoice: false,
+    remove_boleto: false,
   })
 
   const queryClient = useQueryClient()
@@ -194,7 +196,7 @@ export function BoletinsPage() {
       queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] })
       setOpenInvoice(false)
-      setInvoiceData({ invoice_number: '', due_date: '', invoice_file: null, boleto_file: null })
+      setInvoiceData({ invoice_number: '', due_date: '', invoice_file: null, boleto_file: null, remove_invoice: false, remove_boleto: false })
       setBoletimToInvoice(null)
     },
     onError: (e: any) => toast.error('Erro ao faturar: ' + e.message)
@@ -204,10 +206,10 @@ export function BoletinsPage() {
     mutationFn: async () => {
       if (!boletimToInvoice) return
       
-      let invoiceUrl = boletimToInvoice.invoice_url
-      let boletoUrl = boletimToInvoice.boleto_url
+      let invoiceUrl = invoiceData.remove_invoice ? null : boletimToInvoice.invoice_url
+      let boletoUrl = invoiceData.remove_boleto ? null : boletimToInvoice.boleto_url
 
-      if (invoiceData.invoice_file) {
+      if (invoiceData.invoice_file && !invoiceData.remove_invoice) {
         const fileExt = invoiceData.invoice_file.name.split('.').pop()
         const fileName = `nf-${boletimToInvoice.id}-${Math.random()}.${fileExt}`
         const { error: uploadError } = await supabase.storage.from('attachments').upload(fileName, invoiceData.invoice_file)
@@ -215,7 +217,7 @@ export function BoletinsPage() {
         invoiceUrl = supabase.storage.from('attachments').getPublicUrl(fileName).data.publicUrl
       }
 
-      if (invoiceData.boleto_file) {
+      if (invoiceData.boleto_file && !invoiceData.remove_boleto) {
         const fileExt = invoiceData.boleto_file.name.split('.').pop()
         const fileName = `boleto-${boletimToInvoice.id}-${Math.random()}.${fileExt}`
         const { error: uploadError } = await supabase.storage.from('attachments').upload(fileName, invoiceData.boleto_file)
@@ -251,7 +253,7 @@ export function BoletinsPage() {
       queryClient.invalidateQueries({ queryKey: ['boletins'] })
       queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
       setOpenInvoice(false)
-      setInvoiceData({ invoice_number: '', due_date: '', invoice_file: null, boleto_file: null })
+      setInvoiceData({ invoice_number: '', due_date: '', invoice_file: null, boleto_file: null, remove_invoice: false, remove_boleto: false })
       setBoletimToInvoice(null)
     },
     onError: (e: any) => toast.error('Erro ao atualizar faturamento: ' + e.message)
@@ -267,7 +269,9 @@ export function BoletinsPage() {
       invoice_number: '',
       due_date: dueDate.toISOString().split('T')[0],
       invoice_file: null,
-      boleto_file: null
+      boleto_file: null,
+      remove_invoice: false,
+      remove_boleto: false
     })
     setOpenInvoice(true)
   }
@@ -278,7 +282,9 @@ export function BoletinsPage() {
       invoice_number: b.invoice_number || '',
       due_date: '', 
       invoice_file: null,
-      boleto_file: null
+      boleto_file: null,
+      remove_invoice: false,
+      remove_boleto: false
     })
     setOpenInvoice(true)
   }
@@ -728,7 +734,15 @@ export function BoletinsPage() {
                 onChange={e => setInvoiceData(prev => ({ ...prev, invoice_file: e.target.files?.[0] || null }))} 
               />
               {boletimToInvoice?.status === 'invoiced' && (
-                <p className="text-[10px] text-muted-foreground">Opcional. Se enviado, substituirá o arquivo existente.</p>
+                <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+                  <span>Opcional. Se enviado, substituirá o arquivo existente.</span>
+                  {boletimToInvoice.invoice_url && !invoiceData.remove_invoice && (
+                    <Button variant="ghost" size="sm" className="h-5 px-2 text-xs text-destructive" onClick={() => setInvoiceData(prev => ({...prev, remove_invoice: true}))}>
+                      Remover Arquivo Atual
+                    </Button>
+                  )}
+                  {invoiceData.remove_invoice && <span className="text-destructive font-semibold">Será removido</span>}
+                </div>
               )}
             </div>
 
@@ -739,7 +753,15 @@ export function BoletinsPage() {
                 onChange={e => setInvoiceData(prev => ({ ...prev, boleto_file: e.target.files?.[0] || null }))} 
               />
               {boletimToInvoice?.status === 'invoiced' && (
-                <p className="text-[10px] text-muted-foreground">Opcional. Se enviado, substituirá o arquivo existente.</p>
+                <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+                  <span>Opcional. Se enviado, substituirá o arquivo existente.</span>
+                  {boletimToInvoice.boleto_url && !invoiceData.remove_boleto && (
+                    <Button variant="ghost" size="sm" className="h-5 px-2 text-xs text-destructive" onClick={() => setInvoiceData(prev => ({...prev, remove_boleto: true}))}>
+                      Remover Arquivo Atual
+                    </Button>
+                  )}
+                  {invoiceData.remove_boleto && <span className="text-destructive font-semibold">Será removido</span>}
+                </div>
               )}
             </div>
           </div>
