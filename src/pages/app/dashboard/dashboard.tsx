@@ -51,7 +51,44 @@ export function Dashboard() {
       const startOfCalendarMonth = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth(), 1).toISOString()
       const endOfCalendarMonth = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 0, 23, 59, 59, 999).toISOString()
 
-      // 0. Agendamentos do Calendário
+      // 0. Agendamentos e OS (Últimos registros gerais)
+      const { data: ultimosAgendamentosRaw } = await supabase
+        .from('service_orders')
+        .select('id, scheduled_at, status, type, area_ha, os_number, client:clients(name), technician:profiles(name)')
+        .order('scheduled_at', { ascending: false })
+        .limit(15)
+        
+      const STATUS_ORDER: Record<string, number> = {
+        'pending_client': 1,
+        'scheduled': 2,
+        'rescheduled': 2,
+        'traveling': 3,
+        'in_activity': 3,
+        'in_progress': 3,
+        'finished': 4,
+        'completed': 4,
+        'cancelled': 5
+      }
+
+      // Agendamentos: ordenado por status (pendente primeiro) e depois data (mais recente)
+      const ultimosAgendamentos = [...(ultimosAgendamentosRaw || [])].sort((a: any, b: any) => {
+        const orderA = STATUS_ORDER[a.status] || 99
+        const orderB = STATUS_ORDER[b.status] || 99
+        if (orderA !== orderB) return orderA - orderB
+        return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()
+      })
+
+      // OS: ordenado apenas por data (mais recente no topo)
+      const ultimasOs = ultimosAgendamentosRaw || []
+
+      // Boletins Recentes
+      const { data: ultimosBoletins = [] } = await supabase
+        .from('measurement_bulletins')
+        .select('id, created_at, status, hectares_sprayed, total_value, service_order:service_orders(os_number), client:clients(name)')
+        .order('created_at', { ascending: false })
+        .limit(10)
+
+      // 0.5 Agendamentos do Calendário (para os pontos no calendário)
       const { data: agendamentosCalendario = [] } = await supabase
         .from('service_orders')
         .select('scheduled_at')
@@ -115,6 +152,9 @@ export function Dashboard() {
       const hectaresMes = boletinsMes?.reduce((acc, curr) => acc + Number(curr.hectares_sprayed), 0) || 0
 
       return {
+        ultimosAgendamentos,
+        ultimasOs,
+        ultimosBoletins: ultimosBoletins || [],
         agendamentosCalendario: agendamentosCalendario || [],
         agendamentosHoje: agendamentosHoje || [],
         osHoje: { total: osHojeTotal, concluidas: osHojeConcluidas },
@@ -142,6 +182,9 @@ export function Dashboard() {
   if (isError || !user) return <Navigate to="/auth/sign-in" replace />
 
   const data = stats || {
+    ultimosAgendamentos: [],
+    ultimasOs: [],
+    ultimosBoletins: [],
     agendamentosCalendario: [],
     agendamentosHoje: [],
     osHoje: { total: 0, concluidas: 0 },
@@ -400,6 +443,94 @@ export function Dashboard() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Últimos Registros - Cards */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-8 duration-500 delay-300">
+        
+        {/* Agendamentos */}
+        <Card className="border-muted/50 flex flex-col h-[420px]">
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-primary" />
+              Últimos Agendamentos
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
+            {data.ultimosAgendamentos.map((ag: any) => {
+              const statusCfg = STATUS_CONFIG[ag.status] || STATUS_CONFIG['scheduled']
+              return (
+                <div key={ag.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{ag.client?.name}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(ag.scheduled_at).toLocaleDateString('pt-BR')} • {ag.type}</p>
+                  </div>
+                  <Badge variant={statusCfg.variant} className="ml-2 whitespace-nowrap">{statusCfg.label}</Badge>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+
+        {/* Ordens de Serviço */}
+        <Card className="border-muted/50 flex flex-col h-[420px]">
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Cpu className="h-4 w-4 text-primary" />
+              Últimas Ordens de Serviço
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
+            {data.ultimasOs.map((os: any) => {
+              const statusCfg = STATUS_CONFIG[os.status] || STATUS_CONFIG['scheduled']
+              return (
+                <div key={os.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">{os.os_number ? `OS-${String(os.os_number).padStart(4, '0')}` : 'OS-...'} • {os.client?.name}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(os.scheduled_at).toLocaleDateString('pt-BR')} • {os.technician?.name || 'Sem técnico'}</p>
+                  </div>
+                  <Badge variant={statusCfg.variant} className="ml-2 whitespace-nowrap">{statusCfg.label}</Badge>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+
+        {/* Boletins */}
+        <Card className="border-muted/50 flex flex-col h-[420px]">
+          <CardHeader className="pb-3 border-b border-border/30">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileBarChart className="h-4 w-4 text-amber-600" />
+              Últimos Boletins
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
+            {data.ultimosBoletins.map((bol: any) => {
+              const statusColors: any = {
+                'pending': 'bg-amber-500/10 text-amber-600 border-amber-500/20',
+                'approved': 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+                'rejected': 'bg-red-500/10 text-red-600 border-red-500/20',
+                'invoiced': 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+              }
+              const statusLabels: any = {
+                'pending': 'Pendente',
+                'approved': 'Aprovado',
+                'rejected': 'Rejeitado',
+                'invoiced': 'Faturado'
+              }
+              return (
+                <div key={bol.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold truncate">OS-{String(bol.service_order?.os_number).padStart(4, '0')} • {bol.client?.name}</p>
+                    <p className="text-xs text-muted-foreground">{formatCurrency(bol.total_value)} • {bol.hectares_sprayed} ha</p>
+                  </div>
+                  <Badge variant="outline" className={`ml-2 whitespace-nowrap border ${statusColors[bol.status] || ''}`}>{statusLabels[bol.status]}</Badge>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+
       </div>
     </div>
   )

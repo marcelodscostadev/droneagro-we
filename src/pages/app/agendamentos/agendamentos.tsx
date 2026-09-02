@@ -78,10 +78,30 @@ export function AgendamentosPage() {
       const { data, error } = await supabase
         .from('service_orders')
         .select('*, client:clients(name), technician:profiles(name)')
-        .order('scheduled_at', { ascending: true })
       
       if (error) throw error
-      return data
+
+      const STATUS_ORDER: Record<string, number> = {
+        'pending_client': 1,
+        'scheduled': 2,
+        'rescheduled': 2,
+        'traveling': 3,
+        'in_activity': 3,
+        'in_progress': 3,
+        'finished': 4,
+        'completed': 4,
+        'cancelled': 5
+      }
+
+      return (data || []).sort((a: any, b: any) => {
+        const orderA = STATUS_ORDER[a.status] || 99
+        const orderB = STATUS_ORDER[b.status] || 99
+        if (orderA !== orderB) {
+          return orderA - orderB
+        }
+        // If same status, sort by date descending (newest first)
+        return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()
+      })
     }
   })
 
