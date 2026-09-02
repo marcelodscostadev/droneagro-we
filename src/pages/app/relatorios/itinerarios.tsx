@@ -39,8 +39,12 @@ export function ItinerariosPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [shiftToDelete, setShiftToDelete] = useState<string | null>(null)
 
-  const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString()
-  const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999).toISOString()
+  const y = currentDate.getFullYear()
+  const m = String(currentDate.getMonth() + 1).padStart(2, '0')
+  const lastDay = new Date(y, currentDate.getMonth() + 1, 0).getDate()
+  
+  const startOfMonth = `${y}-${m}-01`
+  const endOfMonth = `${y}-${m}-${lastDay}T23:59:59`
 
   // Queries
   const { data: technicians = [] } = useQuery({
