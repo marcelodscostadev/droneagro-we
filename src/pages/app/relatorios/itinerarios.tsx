@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, FileText, Search, ChevronLeft, ChevronRight, Truck, MapPin, Plus } from 'lucide-react'
+import { Loader2, FileText, Search, ChevronLeft, ChevronRight, Truck, MapPin, Plus, Trash2, Edit } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { useNavigate } from 'react-router-dom'
@@ -14,7 +14,6 @@ import { z } from 'zod'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
-import { formatCurrency } from '@/lib/utils'
 
 const shiftSchema = z.object({
   shift_date: z.string().min(1, 'Selecione a data'),
@@ -33,7 +32,12 @@ export function ItinerariosPage() {
   const queryClient = useQueryClient()
   
   const [currentDate, setCurrentDate] = useState(new Date())
+  
   const [openForm, setOpenForm] = useState(false)
+  const [editingShiftId, setEditingShiftId] = useState<string | null>(null)
+  
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [shiftToDelete, setShiftToDelete] = useState<string | null>(null)
 
   const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString()
   const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999).toISOString()
@@ -58,6 +62,7 @@ export function ItinerariosPage() {
           km_start,
           km_end,
           status,
+          technician_id,
           technician:profiles(name)
         `)
         .gte('shift_date', startOfMonth)
@@ -70,7 +75,7 @@ export function ItinerariosPage() {
     placeholderData: keepPreviousData
   })
 
-  const { register, handleSubmit, control, reset, formState: { errors, isSubmitting } } = useForm<ShiftFormData>({
+  const { register, handleSubmit, control, reset, setValue, formState: { errors, isSubmitting } } = useForm<ShiftFormData>({
     resolver: zodResolver(shiftSchema),
     defaultValues: {
       shift_date: new Date().toISOString().split('T')[0],
@@ -79,28 +84,72 @@ export function ItinerariosPage() {
     }
   })
 
-  const createShift = useMutation({
+  const openNewForm = () => {
+    setEditingShiftId(null)
+    reset({
+      shift_date: new Date().toISOString().split('T')[0],
+      km_start: 0,
+      km_end: 0
+    })
+    setOpenForm(true)
+  }
+
+  const openEditForm = (shift: any) => {
+    setEditingShiftId(shift.id)
+    setValue('shift_date', new Date(shift.shift_date).toISOString().split('T')[0])
+    setValue('technician_id', shift.technician_id)
+    setValue('km_start', shift.km_start)
+    setValue('km_end', shift.km_end || 0)
+    setOpenForm(true)
+  }
+
+  const saveShift = useMutation({
     mutationFn: async (data: ShiftFormData) => {
-      // ajusta o timezone para gravar correto no banco
       const d = new Date(data.shift_date + 'T12:00:00')
       
-      const { error } = await supabase.from('daily_shifts').insert([{
-        shift_date: d.toISOString(),
-        technician_id: data.technician_id,
-        km_start: data.km_start,
-        km_end: data.km_end,
-        status: 'completed', // Manually added shifts are automatically completed
-      }])
-      if (error) throw error
+      if (editingShiftId) {
+        const { error } = await supabase.from('daily_shifts').update({
+          shift_date: d.toISOString(),
+          technician_id: data.technician_id,
+          km_start: data.km_start,
+          km_end: data.km_end
+        }).eq('id', editingShiftId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('daily_shifts').insert([{
+          shift_date: d.toISOString(),
+          technician_id: data.technician_id,
+          km_start: data.km_start,
+          km_end: data.km_end,
+          status: 'completed'
+        }])
+        if (error) throw error
+      }
     },
     onSuccess: () => {
-      toast.success('Itinerário lançado com sucesso!')
+      toast.success(`Itinerário ${editingShiftId ? 'atualizado' : 'lançado'} com sucesso!`)
       queryClient.invalidateQueries({ queryKey: ['itinerarios'] })
       setOpenForm(false)
       reset()
     },
     onError: (error: any) => {
-      toast.error('Erro ao lançar itinerário: ' + error.message)
+      toast.error('Erro ao salvar itinerário: ' + error.message)
+    }
+  })
+
+  const deleteShift = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('daily_shifts').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Itinerário excluído com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['itinerarios'] })
+      setDeleteConfirmOpen(false)
+      setShiftToDelete(null)
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao excluir itinerário: ' + error.message)
     }
   })
 
@@ -129,7 +178,7 @@ export function ItinerariosPage() {
         </div>
 
         <div className="flex items-center gap-4">
-          <Button onClick={() => setOpenForm(true)} className="shadow-md">
+          <Button onClick={openNewForm} className="shadow-md">
             <Plus className="h-4 w-4 mr-2" /> Novo Lançamento
           </Button>
 
@@ -182,70 +231,96 @@ export function ItinerariosPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader className="bg-muted/30">
-              <TableRow>
-                <TableHead>Data do Turno</TableHead>
-                <TableHead>Técnico / Motorista</TableHead>
-                <TableHead className="text-center">KM Inicial</TableHead>
-                <TableHead className="text-center">KM Final</TableHead>
-                <TableHead className="text-center">Rodado (KM)</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader className="bg-muted/30">
                 <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell>
+                  <TableHead>Data do Turno</TableHead>
+                  <TableHead>Técnico / Motorista</TableHead>
+                  <TableHead className="text-center">KM Inicial</TableHead>
+                  <TableHead className="text-center">KM Final</TableHead>
+                  <TableHead className="text-center">Rodado (KM)</TableHead>
+                  <TableHead className="text-right min-w-[200px]">Ações</TableHead>
                 </TableRow>
-              ) : shifts.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                    Nenhum deslocamento registrado neste mês.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                shifts.map((s: any) => {
-                  const kmStart = s.km_start || 0;
-                  const kmEnd = s.km_end || 0;
-                  const kmRodado = kmEnd > 0 ? (kmEnd - kmStart) : 0;
-                  
-                  return (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-semibold">
-                        {new Date(s.shift_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                      </TableCell>
-                      <TableCell>{s.technician?.name || 'Desconhecido'}</TableCell>
-                      <TableCell className="text-center text-muted-foreground">{kmStart.toLocaleString('pt-BR')}</TableCell>
-                      <TableCell className="text-center text-muted-foreground">{kmEnd ? kmEnd.toLocaleString('pt-BR') : '--'}</TableCell>
-                      <TableCell className="text-center font-bold text-primary">{kmRodado > 0 ? kmRodado.toLocaleString('pt-BR') : '--'}</TableCell>
-                      <TableCell className="text-right">
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          onClick={() => navigate(`/relatorios/itinerarios/${s.id}/pdf`)}
-                          className="h-8"
-                        >
-                          <FileText className="h-4 w-4 mr-2 text-muted-foreground" />
-                          Gerar PDF
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell>
+                  </TableRow>
+                ) : shifts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                      Nenhum deslocamento registrado neste mês.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  shifts.map((s: any) => {
+                    const kmStart = s.km_start || 0;
+                    const kmEnd = s.km_end || 0;
+                    const kmRodado = kmEnd > 0 ? (kmEnd - kmStart) : 0;
+                    
+                    return (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-semibold">
+                          {new Date(s.shift_date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                        </TableCell>
+                        <TableCell>{s.technician?.name || 'Desconhecido'}</TableCell>
+                        <TableCell className="text-center text-muted-foreground">{kmStart.toLocaleString('pt-BR')}</TableCell>
+                        <TableCell className="text-center text-muted-foreground">{kmEnd ? kmEnd.toLocaleString('pt-BR') : '--'}</TableCell>
+                        <TableCell className="text-center font-bold text-primary">{kmRodado > 0 ? kmRodado.toLocaleString('pt-BR') : '--'}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => navigate(`/relatorios/itinerarios/${s.id}/pdf`)}
+                              className="h-8 w-8 text-muted-foreground"
+                              title="Gerar PDF"
+                            >
+                              <FileText className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => openEditForm(s)}
+                              className="h-8 w-8 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-500/10"
+                              title="Editar"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => {
+                                if (window.confirm('Tem certeza que deseja apagar este registro de quilometragem? Esta ação não pode ser desfeita.')) {
+                                  deleteShift.mutate(s.id);
+                                }
+                              }}
+                              className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Modal Novo Lançamento Manual */}
+      {/* Modal Novo/Editar Lançamento */}
       <Dialog open={openForm} onOpenChange={setOpenForm}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Lançamento Manual de Itinerário</DialogTitle>
+            <DialogTitle>{editingShiftId ? 'Editar Itinerário' : 'Lançamento Manual de Itinerário'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit((d) => createShift.mutate(d))} className="space-y-4 pt-4">
+          <form onSubmit={handleSubmit((d) => saveShift.mutate(d))} className="space-y-4 pt-4">
             <div className="space-y-2">
               <Label>Data do Turno</Label>
               <Input type="date" {...register('shift_date')} />
@@ -288,9 +363,9 @@ export function ItinerariosPage() {
 
             <DialogFooter className="mt-6">
               <Button type="button" variant="ghost" onClick={() => { setOpenForm(false); reset() }}>Cancelar</Button>
-              <Button type="submit" disabled={isSubmitting || createShift.isPending}>
-                {(isSubmitting || createShift.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Salvar Lançamento
+              <Button type="submit" disabled={isSubmitting || saveShift.isPending}>
+                {(isSubmitting || saveShift.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Salvar
               </Button>
             </DialogFooter>
           </form>
