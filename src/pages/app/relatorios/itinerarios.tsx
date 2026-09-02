@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, FileText, Search, ChevronLeft, ChevronRight, Truck, MapPin, Plus, Trash2, Edit } from 'lucide-react'
+import { Loader2, FileText, Search, ChevronLeft, ChevronRight, Truck, MapPin, Plus, Trash2, Edit, Printer } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { useNavigate } from 'react-router-dom'
@@ -178,6 +178,13 @@ export function ItinerariosPage() {
         </div>
 
         <div className="flex items-center gap-4">
+          <Button 
+            variant="outline" 
+            onClick={() => navigate(`/relatorios/itinerarios/mensal-pdf?start=${startOfMonth}&end=${endOfMonth}`)}
+            className="shadow-sm border-primary/20 text-primary hover:bg-primary/5"
+          >
+            <Printer className="h-4 w-4 mr-2" /> Resumo do Mês
+          </Button>
           <Button onClick={openNewForm} className="shadow-md">
             <Plus className="h-4 w-4 mr-2" /> Novo Lançamento
           </Button>

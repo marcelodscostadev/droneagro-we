@@ -20,6 +20,7 @@ import { FluxoCaixaPage } from './app/financeiro/fluxo-caixa'
 import { OperacionalPage } from './app/relatorios/operacional'
 import { ItinerariosPage } from './app/relatorios/itinerarios'
 import { ItinerarioPdfPage } from './app/relatorios/itinerario-pdf'
+import { ItinerarioMensalPdfPage } from './app/relatorios/itinerario-mensal-pdf'
 import { MapaPage } from './app/mapa/mapa'
 import { ConfiguracoesPage } from './app/configuracoes/configuracoes'
 // Portal do Cliente
@@ -88,6 +89,10 @@ export const router = createBrowserRouter([
       {
         path: '/relatorios/itinerarios/:id/pdf',
         Component: () => <PrivateRoute allowedRoles={['admin']}><ItinerarioPdfPage /></PrivateRoute>,
+      },
+      {
+        path: '/relatorios/itinerarios/mensal-pdf',
+        Component: () => <PrivateRoute allowedRoles={['admin']}><ItinerarioMensalPdfPage /></PrivateRoute>,
       },
       {
         path: '/financeiro/cadastros',
