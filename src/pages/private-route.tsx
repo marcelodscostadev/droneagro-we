@@ -58,3 +58,22 @@ export function ClientRoute({ children }: { children: ReactNode }) {
 
   return <>{children}</>
 }
+
+// Rota compartilhada entre admin/técnicos e clientes
+export function SharedRoute({ children }: { children: ReactNode }) {
+  const { data: user, isLoading, isError } = useAuth()
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (isError || !user) {
+    return <Navigate to="/auth/sign-in" replace />
+  }
+
+  return <>{children}</>
+}

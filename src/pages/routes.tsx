@@ -2,7 +2,7 @@ import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from './_layouts/app'
 import { AuthLayout } from './_layouts/auth'
 import { ClientLayout } from './_layouts/client'
-import { PrivateRoute, ClientRoute } from './private-route'
+import { PrivateRoute, ClientRoute, SharedRoute } from './private-route'
 import { SignIn } from './auth/sign-in'
 import { Dashboard } from './app/dashboard/dashboard'
 import { ClientesPage } from './app/clientes/clientes'
@@ -64,7 +64,7 @@ export const router = createBrowserRouter([
       },
       {
         path: '/boletins/:id/pdf',
-        Component: () => <PrivateRoute><BoletimPdfPage /></PrivateRoute>,
+        Component: () => <SharedRoute><BoletimPdfPage /></SharedRoute>,
       },
       {
         path: '/financeiro/receber',
