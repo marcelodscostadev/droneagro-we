@@ -200,6 +200,63 @@ export function BoletinsPage() {
     onError: (e: any) => toast.error('Erro ao faturar: ' + e.message)
   })
 
+  const updateFaturamento = useMutation({
+    mutationFn: async () => {
+      if (!boletimToInvoice) return
+      
+      let invoiceUrl = boletimToInvoice.invoice_url
+      let boletoUrl = boletimToInvoice.boleto_url
+
+      if (invoiceData.invoice_file) {
+        const fileExt = invoiceData.invoice_file.name.split('.').pop()
+        const fileName = `nf-${boletimToInvoice.id}-${Math.random()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('attachments').upload(fileName, invoiceData.invoice_file)
+        if (uploadError) throw uploadError
+        invoiceUrl = supabase.storage.from('attachments').getPublicUrl(fileName).data.publicUrl
+      }
+
+      if (invoiceData.boleto_file) {
+        const fileExt = invoiceData.boleto_file.name.split('.').pop()
+        const fileName = `boleto-${boletimToInvoice.id}-${Math.random()}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('attachments').upload(fileName, invoiceData.boleto_file)
+        if (uploadError) throw uploadError
+        boletoUrl = supabase.storage.from('attachments').getPublicUrl(fileName).data.publicUrl
+      }
+
+      const { error } = await supabase.from('measurement_bulletins').update({
+        invoice_number: invoiceData.invoice_number,
+        invoice_url: invoiceUrl,
+        boleto_url: boletoUrl
+      }).eq('id', boletimToInvoice.id)
+      
+      if (error) throw error
+
+      const updateData: any = {}
+      if (invoiceData.invoice_number) {
+        updateData.description = `Serviço Prestado - NF ${invoiceData.invoice_number} - ${boletimToInvoice.client?.name}`
+      }
+      if (invoiceData.due_date) {
+        updateData.due_date = invoiceData.due_date
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await supabase.from('transactions')
+          .update(updateData)
+          .eq('bulletin_id', boletimToInvoice.id)
+          .eq('type', 'income')
+      }
+    },
+    onSuccess: () => {
+      toast.success('Faturamento atualizado com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['boletins'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+      setOpenInvoice(false)
+      setInvoiceData({ invoice_number: '', due_date: '', invoice_file: null, boleto_file: null })
+      setBoletimToInvoice(null)
+    },
+    onError: (e: any) => toast.error('Erro ao atualizar faturamento: ' + e.message)
+  })
+
   function handleOpenInvoice(b: any) {
     const termDays = b.client?.payment_term_days || 0
     const dueDate = new Date()
@@ -209,6 +266,17 @@ export function BoletinsPage() {
     setInvoiceData({
       invoice_number: '',
       due_date: dueDate.toISOString().split('T')[0],
+      invoice_file: null,
+      boleto_file: null
+    })
+    setOpenInvoice(true)
+  }
+
+  function handleEditInvoice(b: any) {
+    setBoletimToInvoice(b)
+    setInvoiceData({
+      invoice_number: b.invoice_number || '',
+      due_date: '', 
       invoice_file: null,
       boleto_file: null
     })
@@ -474,7 +542,12 @@ export function BoletinsPage() {
                               </div>
                               
                               {b.status === 'invoiced' && (
-                                <div className="mt-4 p-4 rounded-lg border border-blue-500/30 bg-blue-500/5 space-y-3">
+                                <div className="mt-4 p-4 rounded-lg border border-blue-500/30 bg-blue-500/5 space-y-3 relative">
+                                  <div className="absolute top-3 right-3">
+                                    <Button variant="outline" size="sm" onClick={() => handleEditInvoice(b)} className="h-7 text-xs bg-white hover:bg-blue-50">
+                                      <Edit className="h-3 w-3 mr-1" /> Editar
+                                    </Button>
+                                  </div>
                                   <h4 className="font-semibold text-sm text-blue-700 flex items-center gap-2">
                                     <Receipt className="h-4 w-4" /> Dados de Faturamento
                                   </h4>
@@ -614,7 +687,10 @@ export function BoletinsPage() {
       <Dialog open={openInvoice} onOpenChange={setOpenInvoice}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Faturar Boletim BM-{boletimToInvoice?.id?.substring(0, 4)}</DialogTitle>
+            <DialogTitle>
+              {boletimToInvoice?.status === 'invoiced' ? 'Editar Faturamento BM-' : 'Faturar Boletim BM-'}
+              {boletimToInvoice?.id?.substring(0, 4)}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="bg-muted/50 p-3 rounded-lg text-sm mb-2">
@@ -640,6 +716,8 @@ export function BoletinsPage() {
                 type="date" 
                 value={invoiceData.due_date} 
                 onChange={e => setInvoiceData(prev => ({ ...prev, due_date: e.target.value }))} 
+                disabled={boletimToInvoice?.status === 'invoiced'}
+                title={boletimToInvoice?.status === 'invoiced' ? "Vencimento deve ser alterado nas Contas a Receber" : ""}
               />
             </div>
 
@@ -649,6 +727,9 @@ export function BoletinsPage() {
                 type="file" 
                 onChange={e => setInvoiceData(prev => ({ ...prev, invoice_file: e.target.files?.[0] || null }))} 
               />
+              {boletimToInvoice?.status === 'invoiced' && (
+                <p className="text-[10px] text-muted-foreground">Opcional. Se enviado, substituirá o arquivo existente.</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -657,13 +738,19 @@ export function BoletinsPage() {
                 type="file" 
                 onChange={e => setInvoiceData(prev => ({ ...prev, boleto_file: e.target.files?.[0] || null }))} 
               />
+              {boletimToInvoice?.status === 'invoiced' && (
+                <p className="text-[10px] text-muted-foreground">Opcional. Se enviado, substituirá o arquivo existente.</p>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpenInvoice(false)}>Cancelar</Button>
-            <Button onClick={() => invoiceBoletim.mutate()} disabled={invoiceBoletim.isPending}>
-              {invoiceBoletim.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Receipt className="h-4 w-4 mr-2" />}
-              Gerar Faturamento
+            <Button 
+              onClick={() => boletimToInvoice?.status === 'invoiced' ? updateFaturamento.mutate() : invoiceBoletim.mutate()} 
+              disabled={invoiceBoletim.isPending || updateFaturamento.isPending}
+            >
+              {(invoiceBoletim.isPending || updateFaturamento.isPending) ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Receipt className="h-4 w-4 mr-2" />}
+              {boletimToInvoice?.status === 'invoiced' ? 'Atualizar Faturamento' : 'Gerar Faturamento'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -20,7 +20,7 @@ export function ClientDocumentos() {
       if (!clientId) return []
       const { data, error } = await supabase
         .from('measurement_bulletins')
-        .select('id, invoice_number, invoice_url, boleto_url, total_value, created_at, approved_at, service_order:service_orders(scheduled_at, os_number)')
+        .select('id, invoice_number, invoice_url, boleto_url, total_value, created_at, approved_at, service_order:service_orders(scheduled_at, os_number), transactions(status, type)')
         .eq('client_id', clientId)
         .eq('status', 'invoiced')
         .order('created_at', { ascending: false })
@@ -30,8 +30,15 @@ export function ClientDocumentos() {
     enabled: !!clientId,
   })
 
-  const comBoleto = docs.filter((d: any) => d.boleto_url)
-  const comNota   = docs.filter((d: any) => d.invoice_url)
+  const openDocs = docs.filter((d: any) => {
+    // Procura a transação de receita (income) deste boletim
+    const inc = d.transactions?.find((t: any) => t.type === 'income')
+    // Se não existir transação (algo errado) ou o status não for "paid", mostra.
+    return !inc || inc.status !== 'paid'
+  })
+
+  const comBoleto = openDocs.filter((d: any) => d.boleto_url)
+  const comNota   = openDocs.filter((d: any) => d.invoice_url)
 
   const lista = tab === 'boletos' ? comBoleto : comNota
 
