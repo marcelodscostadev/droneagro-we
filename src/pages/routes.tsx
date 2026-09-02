@@ -1,7 +1,8 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from './_layouts/app'
 import { AuthLayout } from './_layouts/auth'
-import { PrivateRoute } from './private-route'
+import { ClientLayout } from './_layouts/client'
+import { PrivateRoute, ClientRoute } from './private-route'
 import { SignIn } from './auth/sign-in'
 import { Dashboard } from './app/dashboard/dashboard'
 import { ClientesPage } from './app/clientes/clientes'
@@ -21,8 +22,17 @@ import { ItinerariosPage } from './app/relatorios/itinerarios'
 import { ItinerarioPdfPage } from './app/relatorios/itinerario-pdf'
 import { MapaPage } from './app/mapa/mapa'
 import { ConfiguracoesPage } from './app/configuracoes/configuracoes'
+// Portal do Cliente
+import { ClientLogin } from './cliente/login'
+import { ClientDashboard } from './cliente/dashboard'
+import { ClientAgendamentos } from './cliente/agendamentos'
+import { ClientHistorico } from './cliente/historico'
+import { ClientDocumentos } from './cliente/documentos'
+import { ClientMapa } from './cliente/mapa'
+import { ClientPerfil } from './cliente/perfil'
 
 export const router = createBrowserRouter([
+  // ─── Painel Admin / Técnicos ────────────────────────────────────
   {
     path: '/',
     Component: AppLayout,
@@ -92,10 +102,6 @@ export const router = createBrowserRouter([
         Component: () => <PrivateRoute allowedRoles={['admin']}><FluxoCaixaPage /></PrivateRoute>,
       },
       {
-        path: '/relatorios/operacional',
-        Component: () => <PrivateRoute><OperacionalPage /></PrivateRoute>,
-      },
-      {
         path: '/mapa',
         Component: () => <PrivateRoute><MapaPage /></PrivateRoute>,
       },
@@ -105,6 +111,8 @@ export const router = createBrowserRouter([
       },
     ],
   },
+
+  // ─── Auth ────────────────────────────────────────────────────────
   {
     path: '/auth',
     Component: AuthLayout,
@@ -112,4 +120,41 @@ export const router = createBrowserRouter([
       { path: '/auth/sign-in', Component: SignIn },
     ],
   },
+
+  // ─── Portal do Cliente ──────────────────────────────────────────
+  {
+    path: '/cliente/login',
+    Component: ClientLogin,
+  },
+  {
+    path: '/cliente',
+    Component: ClientLayout,
+    children: [
+      {
+        path: '/cliente/dashboard',
+        Component: () => <ClientRoute><ClientDashboard /></ClientRoute>,
+      },
+      {
+        path: '/cliente/agendamentos',
+        Component: () => <ClientRoute><ClientAgendamentos /></ClientRoute>,
+      },
+      {
+        path: '/cliente/historico',
+        Component: () => <ClientRoute><ClientHistorico /></ClientRoute>,
+      },
+      {
+        path: '/cliente/documentos',
+        Component: () => <ClientRoute><ClientDocumentos /></ClientRoute>,
+      },
+      {
+        path: '/cliente/mapa',
+        Component: () => <ClientRoute><ClientMapa /></ClientRoute>,
+      },
+      {
+        path: '/cliente/perfil',
+        Component: () => <ClientRoute><ClientPerfil /></ClientRoute>,
+      },
+    ],
+  },
 ])
+

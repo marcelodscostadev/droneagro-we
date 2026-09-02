@@ -1,4 +1,4 @@
-import { CalendarDays, Plus, Filter, Loader2, RefreshCcw, DollarSign } from 'lucide-react'
+import { CalendarDays, Plus, Filter, Loader2, RefreshCcw, DollarSign, CheckCircle, CalendarClock, Bell } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,9 +16,12 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { sendClientEmail } from '@/lib/send-email'
 
 const STATUS_MAP: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'outline' | 'destructive' }> = {
+  pending_client: { label: '⏳ Aguard. Aprovação', variant: 'warning' },
   scheduled: { label: 'Agendado', variant: 'secondary' },
+  rescheduled: { label: 'Reagendado', variant: 'outline' },
   traveling: { label: 'Em Deslocamento', variant: 'outline' },
   in_activity: { label: 'Em Atividade', variant: 'warning' },
   in_progress: { label: 'Em Atividade', variant: 'warning' },
@@ -39,9 +42,16 @@ const agendamentoSchema = z.object({
 
 type AgendamentoFormData = z.infer<typeof agendamentoSchema>
 
+const reagendamentoSchema = z.object({
+  new_date: z.string().min(1, 'Informe a nova data'),
+  reason: z.string().optional(),
+})
+type ReagendamentoForm = z.infer<typeof reagendamentoSchema>
+
 export function AgendamentosPage() {
   const [open, setOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [reagendando, setReagendando] = useState<any | null>(null)
   const queryClient = useQueryClient()
 
   const { data: clients = [] } = useQuery({
@@ -103,6 +113,80 @@ export function AgendamentosPage() {
     onError: (error: any) => {
       toast.error('Erro ao salvar agendamento: ' + error.message)
     }
+  })
+
+  // ── Aprovar solicitação do cliente ───────────────────────────────
+  const aprovarOS = useMutation({
+    mutationFn: async (ag: any) => {
+      const { error } = await supabase
+        .from('service_orders')
+        .update({ status: 'scheduled' })
+        .eq('id', ag.id)
+      if (error) throw error
+    },
+    onSuccess: async (_, ag) => {
+      toast.success('Solicitação aprovada! Cliente será notificado por e-mail.')
+      queryClient.invalidateQueries({ queryKey: ['agendamentos'] })
+      // Buscar e-mail do cliente
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('email, name')
+        .eq('client_id', ag.client_id)
+        .eq('role', 'client')
+        .maybeSingle()
+      if (profile) {
+        await sendClientEmail('aprovacao', {
+          client_email: profile.email,
+          client_name: profile.name || ag.client?.name,
+          scheduled_at: ag.scheduled_at,
+          technician_name: ag.technician?.name,
+          area_ha: ag.area_ha,
+        })
+      }
+    },
+    onError: () => toast.error('Erro ao aprovar agendamento.'),
+  })
+
+  // ── Reagendar solicitação do cliente ─────────────────────────────
+  const { register: regReag, handleSubmit: subReag, reset: resetReag, formState: { errors: errReag, isSubmitting: isReagSubmitting } } = useForm<ReagendamentoForm>({
+    resolver: zodResolver(reagendamentoSchema),
+  })
+
+  const reagendarOS = useMutation({
+    mutationFn: async ({ ag, formData }: { ag: any; formData: ReagendamentoForm }) => {
+      const { error } = await supabase
+        .from('service_orders')
+        .update({
+          status: 'rescheduled',
+          rescheduled_at: new Date(formData.new_date).toISOString(),
+          reschedule_reason: formData.reason || null,
+        })
+        .eq('id', ag.id)
+      if (error) throw error
+    },
+    onSuccess: async (_, { ag, formData }) => {
+      toast.success('Nova data proposta! Cliente será notificado por e-mail.')
+      queryClient.invalidateQueries({ queryKey: ['agendamentos'] })
+      setReagendando(null)
+      resetReag()
+      // Buscar e-mail do cliente
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('email, name')
+        .eq('client_id', ag.client_id)
+        .eq('role', 'client')
+        .maybeSingle()
+      if (profile) {
+        await sendClientEmail('reagendamento', {
+          client_email: profile.email,
+          client_name: profile.name || ag.client?.name,
+          original_date: ag.scheduled_at,
+          new_date: new Date(formData.new_date).toISOString(),
+          reason: formData.reason,
+        })
+      }
+    },
+    onError: () => toast.error('Erro ao propor reagendamento.'),
   })
 
   const handleClientChange = (clientId: string) => {
@@ -258,6 +342,16 @@ export function AgendamentosPage() {
         </div>
       </div>
 
+      {/* Banner de solicitações pendentes */}
+      {agendamentos.filter((ag: any) => ag.status === 'pending_client').length > 0 && (
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 animate-in fade-in">
+          <Bell className="h-5 w-5 text-amber-600 shrink-0 animate-pulse" />
+          <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+            <strong>{agendamentos.filter((ag: any) => ag.status === 'pending_client').length}</strong> solicitação(ões) de clientes aguardando sua aprovação
+          </p>
+        </div>
+      )}
+
       <Card className="border-muted/50">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm text-muted-foreground font-normal">
@@ -315,7 +409,34 @@ export function AgendamentosPage() {
                       </TableCell>
                       <TableCell className="text-center"><Badge variant={s.variant}>{s.label}</Badge></TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(ag)}>Editar</Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {ag.status === 'pending_client' && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950 h-8 px-2 text-xs font-semibold"
+                                onClick={() => aprovarOS.mutate(ag)}
+                                disabled={aprovarOS.isPending}
+                                title="Aprovar solicitação"
+                              >
+                                {aprovarOS.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5 mr-1" />}
+                                Aprovar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950 h-8 px-2 text-xs font-semibold"
+                                onClick={() => { setReagendando(ag); resetReag() }}
+                                title="Propor nova data"
+                              >
+                                <CalendarClock className="h-3.5 w-3.5 mr-1" />
+                                Reagendar
+                              </Button>
+                            </>
+                          )}
+                          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => openEdit(ag)}>Editar</Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -325,6 +446,62 @@ export function AgendamentosPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Modal de Reagendamento */}
+      <Dialog open={!!reagendando} onOpenChange={(v) => { if (!v) { setReagendando(null); resetReag() } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarClock className="h-5 w-5 text-orange-500" />
+              Propor Reagendamento
+            </DialogTitle>
+          </DialogHeader>
+          {reagendando && (
+            <div className="bg-muted/50 rounded-xl p-3 text-sm mb-2 space-y-1">
+              <p><span className="text-muted-foreground">Cliente:</span> <strong>{reagendando.client?.name}</strong></p>
+              <p><span className="text-muted-foreground">Data solicitada:</span> {formatDate(reagendando.scheduled_at)}</p>
+            </div>
+          )}
+          <form
+            onSubmit={subReag((formData) => reagendarOS.mutate({ ag: reagendando, formData }))}
+            className="space-y-4 py-2"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="new_date">Nova data proposta *</Label>
+              <Input
+                {...regReag('new_date')}
+                id="new_date"
+                type="datetime-local"
+                min={new Date().toISOString().slice(0, 16)}
+              />
+              {errReag.new_date && <p className="text-destructive text-xs">{errReag.new_date.message}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reason">Motivo do reagendamento</Label>
+              <Textarea
+                {...regReag('reason')}
+                id="reason"
+                placeholder="Ex: Condições climáticas desfavoráveis, agenda lotada..."
+                rows={3}
+              />
+            </div>
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-400">
+              ℹ️ O cliente receberá um e-mail com a nova data proposta e poderá aceitar ou cancelar pelo portal.
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => { setReagendando(null); resetReag() }}>Cancelar</Button>
+              <Button
+                type="submit"
+                disabled={isReagSubmitting || reagendarOS.isPending}
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+              >
+                {isReagSubmitting || reagendarOS.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CalendarClock className="h-4 w-4 mr-2" />}
+                Propor nova data
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

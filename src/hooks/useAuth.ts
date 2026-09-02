@@ -13,7 +13,7 @@ export function useAuth() {
 
       let { data: profile } = await supabase
         .from('profiles')
-        .select('*')
+        .select('*, client:clients(id, name, email, phone, address, area_ha, lat, lng)')
         .eq('id', user.id)
         .maybeSingle()
 
@@ -27,9 +27,9 @@ export function useAuth() {
             email: user.email,
             role: 'admin'
           }])
-          .select('*')
+          .select('*, client:clients(id, name, email, phone, address, area_ha, lat, lng)')
           .single()
-        
+
         profile = newProfile
       }
 
