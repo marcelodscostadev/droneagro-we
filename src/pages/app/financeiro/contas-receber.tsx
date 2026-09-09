@@ -1,4 +1,4 @@
-import { TrendingUp, Plus, CheckCircle, FileText, Download, X, Edit, Trash2 } from 'lucide-react'
+import { TrendingUp, Plus, CheckCircle, FileText, Download, X, Edit, Trash2, ExternalLink, Eye, Receipt, FileCheck } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,7 @@ export function ContasReceberPage() {
   const [editingTransId, setEditingTransId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [transToDelete, setTransToDelete] = useState<string | null>(null)
+  const [docPreview, setDocPreview] = useState<{ url: string; label: string } | null>(null)
   const queryClient = useQueryClient()
   const { register, handleSubmit, control, reset } = useForm<any>({ defaultValues: { type: 'income', status: 'pending' } })
 
@@ -32,7 +33,7 @@ export function ContasReceberPage() {
     queryKey: ['transactions_income'],
     queryFn: async () => {
       const { data, error } = await supabase.from('transactions')
-        .select('*, category:financial_categories(name), cost_center:cost_centers(name), bulletin:measurement_bulletins(invoice_number, service_orders(clients(name)))')
+        .select('*, category:financial_categories(name), cost_center:cost_centers(name), bulletin:measurement_bulletins(invoice_number, invoice_url, boleto_url, service_orders(clients(name)))')
         .eq('type', 'income')
         .order('due_date', { ascending: false })
       if (error) throw error; return data
@@ -90,13 +91,16 @@ export function ContasReceberPage() {
 
   const onSubmit = (d: any) => {
     const payload = { ...d }
+    // created_at_date é um campo auxiliar do form — mapear para coluna emission_date do banco
     if (payload.created_at_date) {
-      payload.created_at = new Date(payload.created_at_date + 'T12:00:00Z').toISOString()
+      payload.emission_date = payload.created_at_date
       delete payload.created_at_date
     }
-    
+
     if (editingTransId) {
-      updateTrans.mutate({ id: editingTransId, ...payload })
+      // created_at não pode ser atualizado via PostgREST — remover do payload
+      const { created_at, ...updatePayload } = payload
+      updateTrans.mutate({ id: editingTransId, ...updatePayload })
     } else {
       payload.type = 'income'
       payload.status = 'pending'
@@ -110,7 +114,7 @@ export function ContasReceberPage() {
       description: t.description,
       amount: t.amount,
       due_date: t.due_date ? t.due_date.split('T')[0] : '',
-      created_at_date: t.created_at ? t.created_at.split('T')[0] : '',
+      created_at_date: t.emission_date ? t.emission_date : (t.created_at ? t.created_at.split('T')[0] : ''),
       category_id: t.category_id,
       status: t.status,
       type: t.type
@@ -286,6 +290,7 @@ export function ContasReceberPage() {
                 <TableHead>Categoria</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
                 <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-center">Docs</TableHead>
                 <TableHead className="text-right">Ação</TableHead>
               </TableRow>
             </TableHeader>
@@ -305,13 +310,46 @@ export function ContasReceberPage() {
                   <TableCell className="max-w-[120px] sm:max-w-[150px] md:max-w-[200px] truncate" title={t.bulletin?.service_orders?.clients?.name || '—'}>
                     {t.bulletin?.service_orders?.clients?.name || '—'}
                   </TableCell>
-                  <TableCell>{formatDate(t.created_at)}</TableCell>
+                  <TableCell>{t.emission_date ? formatDate(t.emission_date) : formatDate(t.created_at)}</TableCell>
                   <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.paid_at ? formatDate(t.paid_at) : '—'}</TableCell>
                   <TableCell>{t.category?.name || '—'}</TableCell>
                   <TableCell className="text-right font-bold text-emerald-600">{formatCurrency(t.amount)}</TableCell>
                   <TableCell className="text-center">
                     <Badge variant={t.status === 'paid' ? 'success' : 'warning'}>{t.status === 'paid' ? 'Recebido' : 'Pendente'}</Badge>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      {t.bulletin?.invoice_url ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
+                          title="Pré-visualizar Nota Fiscal"
+                          onClick={() => setDocPreview({ url: t.bulletin.invoice_url, label: `NF ${t.bulletin?.invoice_number || ''}` })}
+                        >
+                          <FileCheck className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/40" title="Sem NF"><FileCheck className="h-3.5 w-3.5 opacity-20" /></span>
+                      )}
+                      {t.bulletin?.boleto_url ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
+                          title="Pré-visualizar Boleto"
+                          onClick={() => setDocPreview({ url: t.bulletin.boleto_url, label: 'Boleto' })}
+                        >
+                          <Receipt className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/40" title="Sem boleto"><Receipt className="h-3.5 w-3.5 opacity-20" /></span>
+                      )}
+                      {!t.bulletin?.invoice_url && !t.bulletin?.boleto_url && (
+                        <span className="text-xs text-muted-foreground/40">—</span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right flex items-center justify-end gap-2">
                     {t.status === 'pending' && <Button variant="outline" size="sm" onClick={() => markPaid.mutate(t.id)}><CheckCircle className="h-4 w-4 mr-1"/> Recebido</Button>}
@@ -389,7 +427,7 @@ export function ContasReceberPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* PDF Preview Dialog */}
+      {/* PDF Preview Dialog — Relatório */}
       <Dialog open={openPdf} onOpenChange={(v) => { setOpenPdf(v); if (!v && pdfUrl) URL.revokeObjectURL(pdfUrl) }}>
         <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0">
           <DialogHeader className="px-6 pt-5 pb-3 border-b flex-row items-center justify-between">
@@ -404,6 +442,53 @@ export function ContasReceberPage() {
           <div className="flex-1 overflow-hidden">
             {pdfUrl && (
               <iframe src={pdfUrl} className="w-full h-full" title="PDF Preview" />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de pré-visualização de NF / Boleto */}
+      <Dialog open={!!docPreview} onOpenChange={(v) => { if (!v) setDocPreview(null) }}>
+        <DialogContent className="flex flex-col p-0" style={{ width: '95vw', maxWidth: '95vw', height: '95vh' }}>
+          <DialogHeader className="px-6 pt-5 pb-3 border-b flex-row items-center justify-between">
+            <DialogTitle className="flex items-center gap-2">
+              {docPreview?.label?.startsWith('Boleto') ? (
+                <Receipt className="h-5 w-5 text-amber-500" />
+              ) : (
+                <FileCheck className="h-5 w-5 text-blue-500" />
+              )}
+              {docPreview?.label || 'Documento'}
+            </DialogTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => docPreview && window.open(docPreview.url, '_blank')}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />Abrir em nova aba
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setDocPreview(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden bg-muted/30">
+            {docPreview && (
+              docPreview.url.toLowerCase().endsWith('.pdf') || docPreview.url.includes('application/pdf') || docPreview.url.includes('/pdf') ? (
+                <iframe
+                  src={`${docPreview.url}#zoom=page-width`}
+                  className="w-full h-full"
+                  title={docPreview.label}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
+                  <Eye className="h-12 w-12 opacity-30" />
+                  <p className="text-sm">Pré-visualização não disponível para este tipo de arquivo.</p>
+                  <Button variant="outline" onClick={() => docPreview && window.open(docPreview.url, '_blank')}>
+                    <ExternalLink className="h-4 w-4 mr-2" />Abrir documento
+                  </Button>
+                </div>
+              )
             )}
           </div>
         </DialogContent>

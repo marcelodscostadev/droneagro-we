@@ -15,7 +15,13 @@ export function formatCurrency(value: number | undefined | null) {
 
 export function formatDate(date: string | Date | undefined | null) {
   if (!date) return '-'
-  const d = typeof date === 'string' ? new Date(date) : date
+  // Strings no formato YYYY-MM-DD são interpretadas como UTC 00:00 pelo JS.
+  // Ao exibir no Brasil (UTC-3) isso vira o dia anterior. Ancoramos no meio-dia local.
+  const d = typeof date === 'string'
+    ? /^\d{4}-\d{2}-\d{2}$/.test(date)
+      ? new Date(date + 'T12:00:00')
+      : new Date(date)
+    : date
   return new Intl.DateTimeFormat('pt-BR').format(d)
 }
 
