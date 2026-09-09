@@ -1,4 +1,4 @@
-import { TrendingUp, Plus, CheckCircle, FileText, Download, X, Edit, Trash2, ExternalLink, Eye, Receipt, FileCheck } from 'lucide-react'
+import { TrendingUp, Plus, CheckCircle, FileText, Download, X, Edit, Trash2, ExternalLink, Eye, Receipt, FileCheck, Upload, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,6 +26,15 @@ export function ContasReceberPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [transToDelete, setTransToDelete] = useState<string | null>(null)
   const [docPreview, setDocPreview] = useState<{ url: string; label: string } | null>(null)
+  const [uploadDocOpen, setUploadDocOpen] = useState(false)
+  const [transToUpload, setTransToUpload] = useState<any>(null)
+  const [uploadDocData, setUploadDocData] = useState({
+    invoice_number: '',
+    invoice_file: null as File | null,
+    boleto_file: null as File | null,
+    remove_invoice: false,
+    remove_boleto: false,
+  })
   const queryClient = useQueryClient()
   const { register, handleSubmit, control, reset } = useForm<any>({ defaultValues: { type: 'income', status: 'pending' } })
 
@@ -135,6 +144,47 @@ export function ContasReceberPage() {
       if (error) throw error
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+  })
+
+  const updateBulletinDocs = useMutation({
+    mutationFn: async () => {
+      if (!transToUpload?.bulletin_id) return
+      const bulletinId = transToUpload.bulletin_id
+      const existing = transToUpload.bulletin
+
+      let invoiceUrl = uploadDocData.remove_invoice ? null : (existing?.invoice_url ?? null)
+      let boletoUrl  = uploadDocData.remove_boleto  ? null : (existing?.boleto_url  ?? null)
+
+      if (uploadDocData.invoice_file && !uploadDocData.remove_invoice) {
+        const ext = uploadDocData.invoice_file.name.split('.').pop()
+        const fileName = `nf-${bulletinId}-${Date.now()}.${ext}`
+        const { error: upErr } = await supabase.storage.from('attachments').upload(fileName, uploadDocData.invoice_file)
+        if (upErr) throw upErr
+        invoiceUrl = supabase.storage.from('attachments').getPublicUrl(fileName).data.publicUrl
+      }
+
+      if (uploadDocData.boleto_file && !uploadDocData.remove_boleto) {
+        const ext = uploadDocData.boleto_file.name.split('.').pop()
+        const fileName = `boleto-${bulletinId}-${Date.now()}.${ext}`
+        const { error: upErr } = await supabase.storage.from('attachments').upload(fileName, uploadDocData.boleto_file)
+        if (upErr) throw upErr
+        boletoUrl = supabase.storage.from('attachments').getPublicUrl(fileName).data.publicUrl
+      }
+
+      const updatePayload: any = { invoice_url: invoiceUrl, boleto_url: boletoUrl }
+      if (uploadDocData.invoice_number) updatePayload.invoice_number = uploadDocData.invoice_number
+
+      const { error } = await supabase.from('measurement_bulletins').update(updatePayload).eq('id', bulletinId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Documentos atualizados!')
+      queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+      setUploadDocOpen(false)
+      setTransToUpload(null)
+      setUploadDocData({ invoice_number: '', invoice_file: null, boleto_file: null, remove_invoice: false, remove_boleto: false })
+    },
+    onError: (e: any) => toast.error('Erro ao salvar: ' + e.message)
   })
 
   const filteredTransactions = transactions.filter((t: any) => {
@@ -353,6 +403,27 @@ export function ContasReceberPage() {
                   </TableCell>
                   <TableCell className="text-right flex items-center justify-end gap-2">
                     {t.status === 'pending' && <Button variant="outline" size="sm" onClick={() => markPaid.mutate(t.id)}><CheckCircle className="h-4 w-4 mr-1"/> Recebido</Button>}
+                    {t.bulletin_id && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-blue-600"
+                        title="Anexar / Atualizar NF e Boleto"
+                        onClick={() => {
+                          setTransToUpload(t)
+                          setUploadDocData({
+                            invoice_number: t.bulletin?.invoice_number || '',
+                            invoice_file: null,
+                            boleto_file: null,
+                            remove_invoice: false,
+                            remove_boleto: false,
+                          })
+                          setUploadDocOpen(true)
+                        }}
+                      >
+                        <Upload className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEdit(t)}>
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -493,6 +564,126 @@ export function ContasReceberPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Upload de NF / Boleto */}
+      <Dialog open={uploadDocOpen} onOpenChange={(v) => {
+        setUploadDocOpen(v)
+        if (!v) {
+          setTransToUpload(null)
+          setUploadDocData({ invoice_number: '', invoice_file: null, boleto_file: null, remove_invoice: false, remove_boleto: false })
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5 text-blue-500" />
+              Anexar Documentos
+            </DialogTitle>
+            <DialogDescription>
+              {transToUpload?.bulletin?.service_orders?.clients?.name && (
+                <span className="font-medium">{transToUpload.bulletin.service_orders.clients.name}</span>
+              )}
+              {transToUpload?.bulletin?.invoice_number && (
+                <span className="text-muted-foreground"> · NF {transToUpload.bulletin.invoice_number}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Número da NF */}
+            <div className="space-y-2">
+              <Label>Número da Nota Fiscal</Label>
+              <Input
+                placeholder="Ex: 12345"
+                value={uploadDocData.invoice_number}
+                onChange={e => setUploadDocData(prev => ({ ...prev, invoice_number: e.target.value }))}
+              />
+            </div>
+
+            {/* Nota Fiscal */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <FileCheck className="h-4 w-4 text-blue-500" /> Nota Fiscal (PDF / Imagem)
+              </Label>
+              {transToUpload?.bulletin?.invoice_url && !uploadDocData.remove_invoice && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-blue-500/5 border border-blue-500/20 text-xs">
+                  <span className="text-blue-600 flex items-center gap-1">
+                    <FileCheck className="h-3 w-3" /> Arquivo atual anexado
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-blue-500 hover:underline"
+                      onClick={() => window.open(transToUpload.bulletin.invoice_url, '_blank')}
+                    >Ver</button>
+                    <button
+                      type="button"
+                      className="text-destructive hover:underline"
+                      onClick={() => setUploadDocData(prev => ({ ...prev, remove_invoice: true }))}
+                    >Remover</button>
+                  </div>
+                </div>
+              )}
+              {uploadDocData.remove_invoice && (
+                <p className="text-xs text-destructive font-semibold">Arquivo atual será removido ao salvar.</p>
+              )}
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={e => setUploadDocData(prev => ({ ...prev, invoice_file: e.target.files?.[0] || null, remove_invoice: false }))}
+              />
+            </div>
+
+            {/* Boleto */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-amber-500" /> Boleto (PDF / Imagem)
+              </Label>
+              {transToUpload?.bulletin?.boleto_url && !uploadDocData.remove_boleto && (
+                <div className="flex items-center justify-between p-2 rounded-md bg-amber-500/5 border border-amber-500/20 text-xs">
+                  <span className="text-amber-600 flex items-center gap-1">
+                    <Receipt className="h-3 w-3" /> Arquivo atual anexado
+  	              </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-amber-500 hover:underline"
+                      onClick={() => window.open(transToUpload.bulletin.boleto_url, '_blank')}
+                    >Ver</button>
+                    <button
+                      type="button"
+                      className="text-destructive hover:underline"
+                      onClick={() => setUploadDocData(prev => ({ ...prev, remove_boleto: true }))}
+                    >Remover</button>
+                  </div>
+                </div>
+              )}
+              {uploadDocData.remove_boleto && (
+                <p className="text-xs text-destructive font-semibold">Arquivo atual será removido ao salvar.</p>
+              )}
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={e => setUploadDocData(prev => ({ ...prev, boleto_file: e.target.files?.[0] || null, remove_boleto: false }))}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setUploadDocOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={() => updateBulletinDocs.mutate()}
+              disabled={updateBulletinDocs.isPending}
+            >
+              {updateBulletinDocs.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                : <Upload className="h-4 w-4 mr-2" />}
+              Salvar Documentos
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+
   )
 }
