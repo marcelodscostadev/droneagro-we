@@ -174,16 +174,28 @@ export function BoletinsPage() {
       }])
       if (incomeError) throw incomeError
 
-      // Expense transaction
+      // Expense transaction (Commission)
       if (boletimToInvoice.commission_value > 0 && boletimToInvoice.technician_id) {
+        // Busca a categoria "Comissões"
+        let catId = null
+        const { data: catData } = await supabase.from('financial_categories').select('id').eq('name', 'Comissões').eq('type', 'expense').single()
+        if (catData) {
+          catId = catData.id
+        } else {
+          // Cria a categoria se não existir
+          const { data: newCat } = await supabase.from('financial_categories').insert({ name: 'Comissões', type: 'expense' }).select('id').single()
+          if (newCat) catId = newCat.id
+        }
+
         const { error: expError } = await supabase.from('transactions').insert([{
           type: 'expense',
           description: `Comissão - Boletim BM-${boletimToInvoice.id.substring(0,4)}`,
           amount: boletimToInvoice.commission_value,
-          due_date: today,
+          due_date: dueDate,
           status: 'pending',
           bulletin_id: boletimToInvoice.id,
-          technician_id: boletimToInvoice.technician_id
+          technician_id: boletimToInvoice.technician_id,
+          category_id: catId
         }])
         if (expError) throw expError
       }

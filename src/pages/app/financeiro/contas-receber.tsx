@@ -36,7 +36,8 @@ export function ContasReceberPage() {
     remove_boleto: false,
   })
   const queryClient = useQueryClient()
-  const { register, handleSubmit, control, reset } = useForm<any>({ defaultValues: { type: 'income', status: 'pending' } })
+  const { register, handleSubmit, control, reset, watch } = useForm<any>({ defaultValues: { type: 'income', status: 'pending' } })
+  const formStatus = watch('status')
 
   const { data: transactions = [] } = useQuery({
     queryKey: ['transactions_income'],
@@ -106,6 +107,14 @@ export function ContasReceberPage() {
       delete payload.created_at_date
     }
 
+    if (payload.status === 'paid' && payload.paid_at_date) {
+      // Usa meio-dia local para evitar erro de timezone
+      payload.paid_at = new Date(payload.paid_at_date + 'T12:00:00').toISOString()
+    } else if (payload.status === 'pending') {
+      payload.paid_at = null
+    }
+    delete payload.paid_at_date
+
     if (editingTransId) {
       // created_at não pode ser atualizado via PostgREST — remover do payload
       const { created_at, ...updatePayload } = payload
@@ -124,6 +133,7 @@ export function ContasReceberPage() {
       amount: t.amount,
       due_date: t.due_date ? t.due_date.split('T')[0] : '',
       created_at_date: t.emission_date ? t.emission_date : (t.created_at ? t.created_at.split('T')[0] : ''),
+      paid_at_date: t.paid_at ? t.paid_at.split('T')[0] : (new Date().toISOString().split('T')[0]),
       category_id: t.category_id,
       status: t.status,
       type: t.type
@@ -473,6 +483,26 @@ export function ContasReceberPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Emissão</Label><Input type="date" {...register('created_at_date', { required: true })} /></div>
               <div className="space-y-2"><Label>Vencimento</Label><Input type="date" {...register('due_date', { required: true })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Controller name="status" control={control} render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger><SelectValue placeholder="Status..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pendente</SelectItem>
+                      <SelectItem value="paid">Recebido</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )} />
+              </div>
+              {formStatus === 'paid' && (
+                <div className="space-y-2">
+                  <Label>Data de Recebimento</Label>
+                  <Input type="date" {...register('paid_at_date', { required: true })} />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>

@@ -30,7 +30,8 @@ export function ContasPagarPage() {
   const [tabFilter, setTabFilter] = useState<'ALL'|'OVERDUE'|'TODAY'|'FUTURE'|'PAID'>('ALL')
   
   const queryClient = useQueryClient()
-  const { register, handleSubmit, control, reset } = useForm<any>({ defaultValues: { type: 'expense', status: 'pending' } })
+  const { register, handleSubmit, control, reset, watch } = useForm<any>({ defaultValues: { type: 'expense', status: 'pending' } })
+  const formStatus = watch('status')
 
   const { data: transactions = [] } = useQuery({
     queryKey: ['transactions_expense'],
@@ -105,13 +106,20 @@ export function ContasPagarPage() {
   const onSubmit = (d: any) => {
     const payload = { ...d }
     if (payload.created_at_date) {
-      // Combina a data de emissão com a hora atual ou meia-noite para manter o formato TIMESTAMP
-      payload.created_at = new Date(payload.created_at_date + 'T12:00:00Z').toISOString()
+      payload.emission_date = payload.created_at_date
       delete payload.created_at_date
     }
+
+    if (payload.status === 'paid' && payload.paid_at_date) {
+      payload.paid_at = new Date(payload.paid_at_date + 'T12:00:00').toISOString()
+    } else if (payload.status === 'pending') {
+      payload.paid_at = null
+    }
+    delete payload.paid_at_date
     
     if (editingTransId) {
-      updateTrans.mutate({ id: editingTransId, ...payload })
+      const { created_at, ...updatePayload } = payload
+      updateTrans.mutate({ id: editingTransId, ...updatePayload })
     } else {
       payload.type = 'expense'
       payload.status = 'pending'
@@ -125,7 +133,8 @@ export function ContasPagarPage() {
       description: t.description,
       amount: t.amount,
       due_date: t.due_date ? t.due_date.split('T')[0] : '',
-      created_at_date: t.created_at ? t.created_at.split('T')[0] : '',
+      created_at_date: t.emission_date ? t.emission_date : (t.created_at ? t.created_at.split('T')[0] : ''),
+      paid_at_date: t.paid_at ? t.paid_at.split('T')[0] : (new Date().toISOString().split('T')[0]),
       category_id: t.category_id,
       cost_center_id: t.cost_center_id,
       status: t.status,
@@ -378,7 +387,7 @@ export function ContasPagarPage() {
                   <TableCell className="font-medium max-w-[150px] sm:max-w-[200px] md:max-w-[300px] truncate" title={t.description}>
                     {t.description}
                   </TableCell>
-                  <TableCell>{formatDate(t.created_at)}</TableCell>
+                  <TableCell>{t.emission_date ? formatDate(t.emission_date) : formatDate(t.created_at)}</TableCell>
                   <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
                   <TableCell>{t.paid_at ? formatDate(t.paid_at) : '—'}</TableCell>
                   <TableCell>{t.category?.name || '—'}</TableCell>
@@ -437,6 +446,26 @@ export function ContasPagarPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Emissão</Label><Input type="date" {...register('created_at_date', { required: true })} /></div>
               <div className="space-y-2"><Label>Vencimento</Label><Input type="date" {...register('due_date', { required: true })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Controller name="status" control={control} render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <SelectTrigger><SelectValue placeholder="Status..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pendente</SelectItem>
+                      <SelectItem value="paid">Pago</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )} />
+              </div>
+              {formStatus === 'paid' && (
+                <div className="space-y-2">
+                  <Label>Data de Pagamento</Label>
+                  <Input type="date" {...register('paid_at_date', { required: true })} />
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Centro de Custo</Label>

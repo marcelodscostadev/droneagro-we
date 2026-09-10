@@ -1,12 +1,14 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { BadgeDollarSign, CheckCircle, ChevronLeft, ChevronRight, Clock, CheckCircle2, ListFilter, FileText, Download, X, RotateCcw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { generateFinancialReport, downloadPdf } from '@/lib/pdf-report'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
@@ -18,6 +20,43 @@ export function ComissoesPage() {
   const [openPdf, setOpenPdf] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pdfDoc, setPdfDoc] = useState<any>(null)
+
+  // Retroactive fix for missing categories on commissions
+  useEffect(() => {
+    async function fixMissingCategories() {
+      const { data: txs } = await supabase.from('transactions')
+        .select('id')
+        .eq('type', 'expense')
+        .not('technician_id', 'is', null)
+        .is('category_id', null)
+      
+      if (txs && txs.length > 0) {
+        let catId = null
+        const { data: catData } = await supabase.from('financial_categories').select('id').eq('name', 'Comissões').eq('type', 'expense').single()
+        if (catData) {
+          catId = catData.id
+        } else {
+          const { data: newCat } = await supabase.from('financial_categories').insert({ name: 'Comissões', type: 'expense' }).select('id').single()
+          if (newCat) catId = newCat.id
+        }
+        if (catId) {
+          await supabase.from('transactions')
+            .update({ category_id: catId })
+            .eq('type', 'expense')
+            .not('technician_id', 'is', null)
+            .is('category_id', null)
+          
+          queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
+          queryClient.invalidateQueries({ queryKey: ['transactions_expense'] })
+        }
+      }
+    }
+    fixMissingCategories()
+  }, [])
+  
+  // Modal Pagar
+  const [payCommissionId, setPayCommissionId] = useState<string | null>(null)
+  const [payCommissionDate, setPayCommissionDate] = useState<string>(new Date().toISOString().split('T')[0])
   
   // Filters
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -66,19 +105,24 @@ export function ComissoesPage() {
   })
 
   const markPaid = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('transactions').update({ status: 'paid' }).eq('id', id)
+    mutationFn: async ({ id, date }: { id: string, date: string }) => {
+      const { error } = await supabase.from('transactions')
+        .update({ status: 'paid', paid_at: new Date(date + 'T12:00:00').toISOString() })
+        .eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
       toast.success('Comissão marcada como paga!')
       queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
+      setPayCommissionId(null)
     }
   })
 
   const markUnpaid = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('transactions').update({ status: 'pending' }).eq('id', id)
+      const { error } = await supabase.from('transactions')
+        .update({ status: 'pending', paid_at: null })
+        .eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
@@ -278,17 +322,18 @@ export function ComissoesPage() {
                 <TableHead className="text-right">Comissão (%)</TableHead>
                 <TableHead className="text-right">Valor Comissão</TableHead>
                 <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-center">Data Baixa</TableHead>
                 <TableHead className="text-right">Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">Carregando comissões...</TableCell>
+                  <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">Carregando comissões...</TableCell>
                 </TableRow>
               ) : filteredCommissions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
                     Nenhuma comissão encontrada para este filtro no mês selecionado.
                   </TableCell>
                 </TableRow>
@@ -345,10 +390,21 @@ export function ComissoesPage() {
                     <TableCell className="text-center">
                       <Badge variant={t.status === 'paid' ? 'success' : 'warning'}>{t.status === 'paid' ? 'Pago' : 'Pendente'}</Badge>
                     </TableCell>
+                    {/* Data Baixa */}
+                    <TableCell className="text-center text-sm">
+                      {t.paid_at ? (
+                        <span className="text-emerald-600 font-medium">{formatDate(t.paid_at)}</span>
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </TableCell>
                     {/* Ação */}
                     <TableCell className="text-right">
                       {t.status === 'pending' ? (
-                        <Button variant="outline" size="sm" onClick={() => markPaid.mutate(t.id)} className="h-8">
+                        <Button variant="outline" size="sm" onClick={() => {
+                          setPayCommissionId(t.id)
+                          setPayCommissionDate(new Date().toISOString().split('T')[0])
+                        }} className="h-8">
                           <CheckCircle className="h-4 w-4 mr-1 text-emerald-500"/> Pagar
                         </Button>
                       ) : (
@@ -404,6 +460,31 @@ export function ComissoesPage() {
               <iframe src={`${pdfUrl}#zoom=page-width`} className="w-full h-full" title="PDF Comissões" />
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Confirmar Pagamento */}
+      <Dialog open={!!payCommissionId} onOpenChange={(v) => !v && setPayCommissionId(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Confirmar Pagamento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Data da Baixa (Pagamento)</Label>
+              <Input 
+                type="date" 
+                value={payCommissionDate} 
+                onChange={(e) => setPayCommissionDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayCommissionId(null)}>Cancelar</Button>
+            <Button onClick={() => payCommissionId && markPaid.mutate({ id: payCommissionId, date: payCommissionDate })} disabled={markPaid.isPending}>
+              Confirmar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
