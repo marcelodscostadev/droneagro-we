@@ -134,7 +134,7 @@ export function ContasPagarPage() {
       amount: t.amount,
       due_date: t.due_date ? t.due_date.split('T')[0] : '',
       created_at_date: t.emission_date ? t.emission_date : (t.created_at ? t.created_at.split('T')[0] : ''),
-      paid_at_date: t.paid_at ? t.paid_at.split('T')[0] : (new Date().toISOString().split('T')[0]),
+      paid_at_date: t.paid_at ? t.paid_at.split('T')[0] : (new Date().toLocaleDateString('en-CA')),
       category_id: t.category_id,
       cost_center_id: t.cost_center_id,
       status: t.status,
@@ -174,7 +174,7 @@ export function ContasPagarPage() {
     .filter((t: any) => selectedRows.includes(t.id))
     .reduce((acc: number, t: any) => acc + t.amount, 0)
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = new Date().toLocaleDateString('en-CA')
 
   const filteredTransactions = transactions.filter((t: any) => {
     if (!monthFilter) return true
@@ -279,7 +279,7 @@ export function ContasPagarPage() {
           </Button>
           <Button onClick={() => {
             setEditingTransId(null)
-            reset({ type: 'expense', status: 'pending', created_at_date: new Date().toISOString().split('T')[0] })
+            reset({ type: 'expense', status: 'pending', created_at_date: new Date().toLocaleDateString('en-CA') })
             setOpen(true)
           }}>
             <Plus className="h-4 w-4 mr-2" />Nova Despesa

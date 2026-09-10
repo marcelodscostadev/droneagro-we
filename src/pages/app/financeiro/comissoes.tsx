@@ -55,12 +55,14 @@ export function ComissoesPage() {
   }, [])
   
   // Modal Pagar
-  const [payCommissionId, setPayCommissionId] = useState<string | null>(null)
-  const [payCommissionDate, setPayCommissionDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [payCommissions, setPayCommissions] = useState<string[] | null>(null)
+  const [payCommissionDate, setPayCommissionDate] = useState<string>(new Date().toLocaleDateString('en-CA'))
   
   // Filters
   const [currentDate, setCurrentDate] = useState(new Date())
   const [statusFilter, setStatusFilter] = useState<'pending' | 'paid' | 'all'>('pending')
+  const [batchFilter, setBatchFilter] = useState<string | null>(null)
+  const [showAllMonths, setShowAllMonths] = useState(false)
 
   const y = currentDate.getFullYear()
   const m = String(currentDate.getMonth() + 1).padStart(2, '0')
@@ -70,9 +72,9 @@ export function ComissoesPage() {
   const endOfMonth = `${y}-${m}-${lastDay}T23:59:59`
 
   const { data: commissions = [], isLoading } = useQuery({
-    queryKey: ['transactions_commissions', startOfMonth, endOfMonth],
+    queryKey: ['transactions_commissions', showAllMonths ? 'ALL' : startOfMonth, showAllMonths ? 'ALL' : endOfMonth, batchFilter],
     queryFn: async () => {
-      const { data, error } = await supabase.from('transactions')
+      let query = supabase.from('transactions')
         .select(`
           *,
           technician:profiles(name),
@@ -89,15 +91,23 @@ export function ComissoesPage() {
         `)
         .eq('type', 'expense')
         .not('technician_id', 'is', null)
-        .gte('due_date', startOfMonth)
-        .lte('due_date', endOfMonth)
-        .order('due_date', { ascending: false })
+
+      if (batchFilter) {
+        query = query.eq('batch_id', batchFilter)
+      } else if (!showAllMonths) {
+        query = query.gte('due_date', startOfMonth).lte('due_date', endOfMonth)
+      }
+
+      const { data, error } = await query.order('due_date', { ascending: false })
       if (error) throw error; 
       
       // Ordenação: Pendentes primeiro, depois data
       return (data || []).sort((a: any, b: any) => {
         if (a.status === 'pending' && b.status === 'paid') return -1
         if (a.status === 'paid' && b.status === 'pending') return 1
+        if (a.status === 'paid' && b.status === 'paid') {
+          return new Date(b.paid_at || b.due_date).getTime() - new Date(a.paid_at || a.due_date).getTime()
+        }
         return new Date(b.due_date).getTime() - new Date(a.due_date).getTime()
       })
     },
@@ -105,16 +115,18 @@ export function ComissoesPage() {
   })
 
   const markPaid = useMutation({
-    mutationFn: async ({ id, date }: { id: string, date: string }) => {
+    mutationFn: async ({ ids, date }: { ids: string[], date: string }) => {
+      const batch_id = 'PAG-' + Math.random().toString(36).substring(2, 6).toUpperCase()
       const { error } = await supabase.from('transactions')
-        .update({ status: 'paid', paid_at: new Date(date + 'T12:00:00').toISOString() })
-        .eq('id', id)
+        .update({ status: 'paid', paid_at: new Date(date + 'T12:00:00').toISOString(), batch_id })
+        .in('id', ids)
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success('Comissão marcada como paga!')
+      toast.success('Comissão(ões) marcada(s) como paga(s)!')
       queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
-      setPayCommissionId(null)
+      setPayCommissions(null)
+      setSelectedRows([])
     }
   })
 
@@ -143,9 +155,10 @@ export function ComissoesPage() {
   }, [commissions])
 
   // Filtro de lista
-  const filteredCommissions = commissions.filter((c: any) => {
-    if (statusFilter === 'all') return true
-    return c.status === statusFilter
+  const filteredCommissions = commissions.filter((t: any) => {
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false
+    if (batchFilter && t.batch_id !== batchFilter) return false
+    return true
   })
 
   const toggleSelectAll = () => {
@@ -166,7 +179,11 @@ export function ComissoesPage() {
 
   function handleGeneratePdf() {
     const mes = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-    const data = filteredCommissions.map((t: any) => ({
+    const baseList = selectedRows.length > 0 
+      ? filteredCommissions.filter((t: any) => selectedRows.includes(t.id))
+      : filteredCommissions
+
+    const data = baseList.map((t: any) => ({
       tecnico: t.technician?.name || '—',
       cliente: t.bulletin?.client?.name || '—',
       data_os: t.bulletin?.service_order?.scheduled_at ? formatDate(t.bulletin.service_order.scheduled_at) : '—',
@@ -177,18 +194,22 @@ export function ComissoesPage() {
       status: t.status === 'paid' ? 'Pago' : 'Pendente',
     }))
 
-    const totalPendente = filteredCommissions
+    const totalPendente = baseList
       .filter((c: any) => c.status === 'pending')
       .reduce((a: number, c: any) => a + Number(c.amount), 0)
-    const totalPago = filteredCommissions
+    const totalPago = baseList
       .filter((c: any) => c.status === 'paid')
       .reduce((a: number, c: any) => a + Number(c.amount), 0)
-    const totalGeral = filteredCommissions
+    const totalGeral = baseList
       .reduce((a: number, c: any) => a + Number(c.amount), 0)
+
+    const subtitleText = selectedRows.length > 0 
+      ? `Comissões Selecionadas (${data.length} itens) | Pendente: ${formatCurrency(totalPendente)} | Pago: ${formatCurrency(totalPago)} | Total: ${formatCurrency(totalGeral)}`
+      : `${data.length} lançamento(s) | Pendente: ${formatCurrency(totalPendente)} | Pago: ${formatCurrency(totalPago)} | Total: ${formatCurrency(totalGeral)}`
 
     const doc = generateFinancialReport({
       title: `Relatório de Comissões — ${mes}`,
-      subtitle: `${data.length} lançamento(s) | Pendente: ${formatCurrency(totalPendente)} | Pago: ${formatCurrency(totalPago)} | Total: ${formatCurrency(totalGeral)}`,
+      subtitle: subtitleText,
       columns: [
         { header: 'Técnico',         dataKey: 'tecnico' },
         { header: 'Cliente',         dataKey: 'cliente' },
@@ -226,22 +247,31 @@ export function ComissoesPage() {
         </div>
         
         {/* Seletor de Mês */}
-        <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-lg border">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
-            setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))
-          }}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div className="text-sm font-semibold capitalize min-w-[120px] text-center">
-            {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-          </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
-            setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))
-          }}>
-            <ChevronRight className="h-4 w-4" />
+        <div className="flex items-center gap-2">
+          {!showAllMonths && (
+            <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-lg border">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="text-sm font-semibold capitalize min-w-[120px] text-center">
+                {currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          
+          <Button 
+            variant={showAllMonths ? "default" : "outline"} 
+            className="h-11"
+            onClick={() => setShowAllMonths(!showAllMonths)}
+          >
+            {showAllMonths ? "Ver por Mês" : "Ver Todo o Histórico"}
           </Button>
         </div>
-        <Button variant="outline" onClick={handleGeneratePdf}>
+        
+        <Button variant="outline" className="h-11" onClick={handleGeneratePdf}>
           <FileText className="h-4 w-4 mr-2" />Emitir Relatório
         </Button>
       </div>
@@ -253,7 +283,7 @@ export function ComissoesPage() {
             "cursor-pointer transition-all duration-200 border-2 hover:border-primary/50",
             statusFilter === 'pending' ? "border-amber-500 bg-amber-500/5 shadow-md" : "border-transparent"
           )}
-          onClick={() => { setStatusFilter('pending'); setSelectedRows([]) }}
+          onClick={() => { setStatusFilter('pending'); setSelectedRows([]); setBatchFilter(null) }}
         >
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -289,7 +319,7 @@ export function ComissoesPage() {
             "cursor-pointer transition-all duration-200 border-2 hover:border-primary/50",
             statusFilter === 'all' ? "border-primary bg-primary/5 shadow-md" : "border-transparent"
           )}
-          onClick={() => { setStatusFilter('all'); setSelectedRows([]) }}
+          onClick={() => { setStatusFilter('all'); setSelectedRows([]); setBatchFilter(null) }}
         >
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -302,6 +332,15 @@ export function ComissoesPage() {
           </CardContent>
         </Card>
       </div>
+
+      {batchFilter && (
+        <div className="flex items-center justify-end">
+          <Badge variant="secondary" className="px-3 py-1.5 flex items-center gap-2 text-sm cursor-pointer hover:bg-secondary/80" onClick={() => setBatchFilter(null)}>
+            Filtro Ativo (Lote: {batchFilter})
+            <X className="h-3 w-3 ml-1" />
+          </Badge>
+        </div>
+      )}
 
       <Card className="border-muted/50 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
@@ -393,7 +432,19 @@ export function ComissoesPage() {
                     {/* Data Baixa */}
                     <TableCell className="text-center text-sm">
                       {t.paid_at ? (
-                        <span className="text-emerald-600 font-medium">{formatDate(t.paid_at)}</span>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-emerald-600 font-medium">{formatDate(t.paid_at)}</span>
+                          {t.batch_id && (
+                            <Badge 
+                              variant="outline" 
+                              className="text-[10px] px-1.5 h-5 cursor-pointer hover:bg-muted text-muted-foreground"
+                              onClick={() => setBatchFilter(t.batch_id)}
+                              title="Filtrar por este pagamento"
+                            >
+                              {t.batch_id}
+                            </Badge>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-muted-foreground/40">—</span>
                       )}
@@ -402,8 +453,8 @@ export function ComissoesPage() {
                     <TableCell className="text-right">
                       {t.status === 'pending' ? (
                         <Button variant="outline" size="sm" onClick={() => {
-                          setPayCommissionId(t.id)
-                          setPayCommissionDate(new Date().toISOString().split('T')[0])
+                          setPayCommissions([t.id])
+                          setPayCommissionDate(new Date().toLocaleDateString('en-CA'))
                         }} className="h-8">
                           <CheckCircle className="h-4 w-4 mr-1 text-emerald-500"/> Pagar
                         </Button>
@@ -434,7 +485,18 @@ export function ComissoesPage() {
           <span className="font-medium text-sm">{selectedRows.length} selecionado(s)</span>
           <div className="w-px h-4 bg-background/30" />
           <span className="font-bold text-primary">Total: {formatCurrency(selectedTotal)}</span>
-          <Button size="sm" variant="secondary" className="ml-2 h-7 px-3 text-xs bg-background text-foreground hover:bg-background/90" onClick={() => setSelectedRows([])}>Limpar</Button>
+          <div className="flex items-center gap-2 ml-2">
+            <Button size="sm" onClick={() => {
+              setPayCommissions(selectedRows)
+              setPayCommissionDate(new Date().toLocaleDateString('en-CA'))
+            }} className="h-7 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white">
+              <CheckCircle className="h-3 w-3 mr-1" />Baixar Selecionadas
+            </Button>
+            <Button size="sm" variant="secondary" className="h-7 px-3 text-xs bg-background text-foreground hover:bg-background/90" onClick={handleGeneratePdf}>
+              <FileText className="h-3 w-3 mr-1" />Relatório
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-3 text-xs text-background hover:bg-background/20" onClick={() => setSelectedRows([])}>Limpar</Button>
+          </div>
         </div>
       )}
 
@@ -464,7 +526,7 @@ export function ComissoesPage() {
       </Dialog>
 
       {/* Modal Confirmar Pagamento */}
-      <Dialog open={!!payCommissionId} onOpenChange={(v) => !v && setPayCommissionId(null)}>
+      <Dialog open={!!payCommissions} onOpenChange={(v) => !v && setPayCommissions(null)}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Confirmar Pagamento</DialogTitle>
@@ -480,8 +542,8 @@ export function ComissoesPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPayCommissionId(null)}>Cancelar</Button>
-            <Button onClick={() => payCommissionId && markPaid.mutate({ id: payCommissionId, date: payCommissionDate })} disabled={markPaid.isPending}>
+            <Button variant="outline" onClick={() => setPayCommissions(null)}>Cancelar</Button>
+            <Button onClick={() => payCommissions && markPaid.mutate({ ids: payCommissions, date: payCommissionDate })} disabled={markPaid.isPending}>
               Confirmar
             </Button>
           </DialogFooter>
