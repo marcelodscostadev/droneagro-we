@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react'
-import { BadgeDollarSign, CheckCircle, ChevronLeft, ChevronRight, Clock, CheckCircle2, ListFilter } from 'lucide-react'
+import { BadgeDollarSign, CheckCircle, ChevronLeft, ChevronRight, Clock, CheckCircle2, ListFilter, FileText, Download, X, RotateCcw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { generateFinancialReport, downloadPdf } from '@/lib/pdf-report'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
@@ -13,6 +15,9 @@ import { cn } from '@/lib/utils'
 export function ComissoesPage() {
   const queryClient = useQueryClient()
   const [selectedRows, setSelectedRows] = useState<string[]>([])
+  const [openPdf, setOpenPdf] = useState(false)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfDoc, setPdfDoc] = useState<any>(null)
   
   // Filters
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -29,9 +34,22 @@ export function ComissoesPage() {
     queryKey: ['transactions_commissions', startOfMonth, endOfMonth],
     queryFn: async () => {
       const { data, error } = await supabase.from('transactions')
-        .select('*, technician:profiles(name)')
+        .select(`
+          *,
+          technician:profiles(name),
+          bulletin:measurement_bulletins(
+            hectares_sprayed,
+            total_value,
+            commission_pct,
+            service_order:service_orders(
+              os_number,
+              scheduled_at
+            ),
+            client:clients(name)
+          )
+        `)
         .eq('type', 'expense')
-        .not('technician_id', 'is', null) // filter only transactions with a technician assigned (commissions)
+        .not('technician_id', 'is', null)
         .gte('due_date', startOfMonth)
         .lte('due_date', endOfMonth)
         .order('due_date', { ascending: false })
@@ -54,6 +72,17 @@ export function ComissoesPage() {
     },
     onSuccess: () => {
       toast.success('Comissão marcada como paga!')
+      queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
+    }
+  })
+
+  const markUnpaid = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('transactions').update({ status: 'pending' }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Pagamento desfeito!')
       queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
     }
   })
@@ -91,6 +120,56 @@ export function ComissoesPage() {
     .filter((t: any) => selectedRows.includes(t.id))
     .reduce((acc: number, t: any) => acc + Number(t.amount), 0)
 
+  function handleGeneratePdf() {
+    const mes = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    const data = filteredCommissions.map((t: any) => ({
+      tecnico: t.technician?.name || '—',
+      cliente: t.bulletin?.client?.name || '—',
+      data_os: t.bulletin?.service_order?.scheduled_at ? formatDate(t.bulletin.service_order.scheduled_at) : '—',
+      hectares: t.bulletin?.hectares_sprayed != null ? `${t.bulletin.hectares_sprayed} ha` : '—',
+      valor_servico: t.bulletin?.total_value != null ? formatCurrency(t.bulletin.total_value) : '—',
+      pct: t.bulletin?.commission_pct != null ? `${t.bulletin.commission_pct}%` : '—',
+      comissao: formatCurrency(t.amount),
+      status: t.status === 'paid' ? 'Pago' : 'Pendente',
+    }))
+
+    const totalPendente = filteredCommissions
+      .filter((c: any) => c.status === 'pending')
+      .reduce((a: number, c: any) => a + Number(c.amount), 0)
+    const totalPago = filteredCommissions
+      .filter((c: any) => c.status === 'paid')
+      .reduce((a: number, c: any) => a + Number(c.amount), 0)
+    const totalGeral = filteredCommissions
+      .reduce((a: number, c: any) => a + Number(c.amount), 0)
+
+    const doc = generateFinancialReport({
+      title: `Relatório de Comissões — ${mes}`,
+      subtitle: `${data.length} lançamento(s) | Pendente: ${formatCurrency(totalPendente)} | Pago: ${formatCurrency(totalPago)} | Total: ${formatCurrency(totalGeral)}`,
+      columns: [
+        { header: 'Técnico',         dataKey: 'tecnico' },
+        { header: 'Cliente',         dataKey: 'cliente' },
+        { header: 'Data OS',         dataKey: 'data_os',       width: 22, align: 'center' },
+        { header: 'Hectares',        dataKey: 'hectares',      width: 20, align: 'center' },
+        { header: 'Valor Serviço',   dataKey: 'valor_servico', width: 30, align: 'right' },
+        { header: 'Comissão (%)',    dataKey: 'pct',           width: 22, align: 'center' },
+        { header: 'Valor Comissão',  dataKey: 'comissao',      width: 30, align: 'right' },
+        { header: 'Status',          dataKey: 'status',        width: 18, align: 'center' },
+      ],
+      rows: data,
+      summaryRows: [
+        { label: 'Pendente:',    value: formatCurrency(totalPendente), color: [245, 158, 11] },
+        { label: 'Pago:',        value: formatCurrency(totalPago),     color: [16, 185, 129] },
+        { label: 'Total Geral:', value: formatCurrency(totalGeral) },
+      ],
+    })
+
+    const blob = doc.output('blob')
+    const url = URL.createObjectURL(blob)
+    setPdfUrl(url)
+    setPdfDoc(doc)
+    setOpenPdf(true)
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -118,6 +197,9 @@ export function ComissoesPage() {
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
+        <Button variant="outline" onClick={handleGeneratePdf}>
+          <FileText className="h-4 w-4 mr-2" />Emitir Relatório
+        </Button>
       </div>
 
       {/* KPI Cards / Filtros Rápidos */}
@@ -188,10 +270,13 @@ export function ComissoesPage() {
                     onChange={toggleSelectAll} 
                   />
                 </TableHead>
-                <TableHead>Técnico / Descrição</TableHead>
-                <TableHead>Emissão</TableHead>
-                <TableHead>Vencimento</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
+                <TableHead>Técnico</TableHead>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Data OS</TableHead>
+                <TableHead className="text-center">Hectares</TableHead>
+                <TableHead className="text-right">Valor Serviço</TableHead>
+                <TableHead className="text-right">Comissão (%)</TableHead>
+                <TableHead className="text-right">Valor Comissão</TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-right">Ação</TableHead>
               </TableRow>
@@ -199,11 +284,11 @@ export function ComissoesPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">Carregando comissões...</TableCell>
+                  <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">Carregando comissões...</TableCell>
                 </TableRow>
               ) : filteredCommissions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                     Nenhuma comissão encontrada para este filtro no mês selecionado.
                   </TableCell>
                 </TableRow>
@@ -216,23 +301,67 @@ export function ComissoesPage() {
                         onChange={() => toggleSelectRow(t.id)} 
                       />
                     </TableCell>
+                    {/* Técnico */}
                     <TableCell>
-                      <p className="font-bold text-foreground">{t.technician?.name || '—'}</p>
-                      <p className="text-xs text-muted-foreground truncate max-w-[200px] sm:max-w-[300px]">{t.description}</p>
+                      <p className="font-bold text-foreground whitespace-nowrap">{t.technician?.name || '—'}</p>
+                      <p className="text-xs text-muted-foreground truncate max-w-[160px]">{t.description}</p>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{formatDate(t.created_at)}</TableCell>
-                    <TableCell className="font-semibold text-sm">{formatDate(t.due_date)}</TableCell>
-                    <TableCell className="text-right font-bold text-amber-600">{formatCurrency(t.amount)}</TableCell>
+                    {/* Cliente */}
+                    <TableCell className="font-medium whitespace-nowrap">
+                      {t.bulletin?.client?.name || '—'}
+                    </TableCell>
+                    {/* Data OS */}
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                      {t.bulletin?.service_order?.scheduled_at
+                        ? formatDate(t.bulletin.service_order.scheduled_at)
+                        : '—'}
+                      {t.bulletin?.service_order?.os_number && (
+                        <p className="text-xs text-muted-foreground/60">OS-{String(t.bulletin.service_order.os_number).padStart(4, '0')}</p>
+                      )}
+                    </TableCell>
+                    {/* Hectares */}
+                    <TableCell className="text-center font-semibold">
+                      {t.bulletin?.hectares_sprayed != null
+                        ? `${t.bulletin.hectares_sprayed} ha`
+                        : '—'}
+                    </TableCell>
+                    {/* Valor Total do Serviço */}
+                    <TableCell className="text-right font-semibold text-emerald-600">
+                      {t.bulletin?.total_value != null
+                        ? formatCurrency(t.bulletin.total_value)
+                        : '—'}
+                    </TableCell>
+                    {/* % Comissão */}
+                    <TableCell className="text-right text-muted-foreground">
+                      {t.bulletin?.commission_pct != null
+                        ? `${t.bulletin.commission_pct}%`
+                        : '—'}
+                    </TableCell>
+                    {/* Valor da Comissão */}
+                    <TableCell className="text-right font-bold text-amber-600">
+                      {formatCurrency(t.amount)}
+                    </TableCell>
+                    {/* Status */}
                     <TableCell className="text-center">
                       <Badge variant={t.status === 'paid' ? 'success' : 'warning'}>{t.status === 'paid' ? 'Pago' : 'Pendente'}</Badge>
                     </TableCell>
+                    {/* Ação */}
                     <TableCell className="text-right">
                       {t.status === 'pending' ? (
                         <Button variant="outline" size="sm" onClick={() => markPaid.mutate(t.id)} className="h-8">
                           <CheckCircle className="h-4 w-4 mr-1 text-emerald-500"/> Pagar
                         </Button>
                       ) : (
-                        <span className="text-xs font-medium text-emerald-600 flex items-center justify-end gap-1"><CheckCircle2 className="h-3 w-3" /> Liquidado</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                          onClick={() => markUnpaid.mutate(t.id)}
+                          disabled={markUnpaid.isPending}
+                          title="Desfazer pagamento"
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" /> Desfazer
+                        </Button>
                       )}
                     </TableCell>
                   </TableRow>
@@ -252,6 +381,31 @@ export function ComissoesPage() {
           <Button size="sm" variant="secondary" className="ml-2 h-7 px-3 text-xs bg-background text-foreground hover:bg-background/90" onClick={() => setSelectedRows([])}>Limpar</Button>
         </div>
       )}
+
+      {/* Modal de Pré-visualização PDF */}
+      <Dialog open={openPdf} onOpenChange={(v) => { setOpenPdf(v); if (!v && pdfUrl) URL.revokeObjectURL(pdfUrl) }}>
+        <DialogContent className="flex flex-col p-0" style={{ width: '95vw', maxWidth: '95vw', height: '95vh' }}>
+          <DialogHeader className="px-6 pt-5 pb-3 border-b flex-row items-center justify-between">
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              Pré-visualização — Comissões
+            </DialogTitle>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => pdfDoc && downloadPdf(pdfDoc, `comissoes-${currentDate.toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' }).replace('/', '-')}.pdf`)}>
+                <Download className="h-4 w-4 mr-2" />Baixar PDF
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setOpenPdf(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {pdfUrl && (
+              <iframe src={`${pdfUrl}#zoom=page-width`} className="w-full h-full" title="PDF Comissões" />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
