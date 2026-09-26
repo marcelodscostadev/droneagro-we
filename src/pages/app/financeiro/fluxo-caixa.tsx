@@ -13,7 +13,7 @@ import { generateFinancialReport, downloadPdf } from '@/lib/pdf-report'
 export function FluxoCaixaPage() {
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
-  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({})
+
   const [openPdf, setOpenPdf] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pdfDoc, setPdfDoc] = useState<any>(null)
@@ -36,7 +36,7 @@ export function FluxoCaixaPage() {
       const { data, error } = await supabase.from('transactions')
         .select('type, amount')
         .eq('status', 'paid')
-        .lt('due_date', start)
+        .lt('paid_at', start)
       if (error) throw error; return data
     }
   })
@@ -48,31 +48,19 @@ export function FluxoCaixaPage() {
       let query = supabase.from('transactions')
         .select('*')
         .eq('status', 'paid')
-        .order('due_date', { ascending: true })
+        .order('paid_at', { ascending: true })
 
       if (monthFilter) {
         const [year, month] = monthFilter.split('-')
         const start = `${year}-${month}-01`
-        const end = new Date(Number(year), Number(month), 0).toISOString().split('T')[0]
-        query = query.gte('due_date', start).lte('due_date', end)
+        const end = new Date(Number(year), Number(month), 0).toISOString().split('T')[0] + 'T23:59:59.999Z'
+        query = query.gte('paid_at', start).lte('paid_at', end)
       }
 
       const { data, error } = await query
       if (error) throw error; return data
     }
   })
-
-  // Group by date with individual items
-  const flowByDate: Record<string, { income: number; expense: number; items: any[] }> = {}
-  transactions.forEach((t: any) => {
-    if (!t.due_date) return
-    if (!flowByDate[t.due_date]) flowByDate[t.due_date] = { income: 0, expense: 0, items: [] }
-    if (t.type === 'income') flowByDate[t.due_date].income += Number(t.amount)
-    if (t.type === 'expense') flowByDate[t.due_date].expense += Number(t.amount)
-    flowByDate[t.due_date].items.push(t)
-  })
-
-  const dates = Object.keys(flowByDate).sort()
 
   // Opening balance = initial_balance + all income before this month - all expenses before this month
   const priorIncome = priorTransactions.filter((t: any) => t.type === 'income').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
@@ -84,34 +72,26 @@ export function FluxoCaixaPage() {
   const totalIncome = transactions.filter((t: any) => t.type === 'income').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
   const totalExpense = transactions.filter((t: any) => t.type === 'expense').reduce((acc: number, t: any) => acc + Number(t.amount), 0)
 
-  function toggleDate(date: string) {
-    setExpandedDates(prev => ({ ...prev, [date]: !prev[date] }))
-  }
-
   function handleGeneratePdf() {
     const rows: any[] = []
-    let balance = Number(settings?.initial_balance || 0)
+    let balance = openingBalance
 
-    dates.forEach((date) => {
-      const d = flowByDate[date]
-      const dailyBalance = d.income - d.expense
-      balance += dailyBalance
-
-      // Add each transaction of the day
-      d.items.forEach((t: any, idx: number) => {
-        rows.push({
-          data: idx === 0 ? formatDate(date) : '',
-          descricao: t.description || '—',
-          tipo: t.type === 'income' ? 'Entrada' : 'Saída',
-          entradas: t.type === 'income' ? formatCurrency(t.amount) : '—',
-          saidas: t.type === 'expense' ? formatCurrency(t.amount) : '—',
-          saldo_dia: idx === d.items.length - 1 ? formatCurrency(dailyBalance) : '',
-          saldo_acumulado: idx === d.items.length - 1 ? formatCurrency(balance) : '',
-        })
+    transactions.forEach((t: any) => {
+      const amount = Number(t.amount)
+      if (t.type === 'income') balance += amount
+      if (t.type === 'expense') balance -= amount
+      
+      rows.push({
+        data: t.paid_at ? formatDate(t.paid_at) : '—',
+        descricao: t.description || '—',
+        tipo: t.type === 'income' ? 'Entrada' : 'Saída',
+        entradas: t.type === 'income' ? formatCurrency(t.amount) : '—',
+        saidas: t.type === 'expense' ? formatCurrency(t.amount) : '—',
+        saldo_acumulado: formatCurrency(balance),
       })
     })
 
-    const finalBalance = Number(settings?.initial_balance || 0) + totalIncome - totalExpense
+    const finalBalance = openingBalance + totalIncome - totalExpense
     const [year, month] = monthFilter.split('-')
     const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
     const monthName = monthNames[Number(month) - 1]
@@ -120,13 +100,12 @@ export function FluxoCaixaPage() {
       title: `Fluxo de Caixa Mensal — ${monthName}/${year}`,
       subtitle: `Entradas: ${formatCurrency(totalIncome)} | Saídas: ${formatCurrency(totalExpense)} | Saldo Final: ${formatCurrency(finalBalance)}`,
       columns: [
-        { header: 'Data', dataKey: 'data', width: 22 },
+        { header: 'Data', dataKey: 'data', width: 28 },
         { header: 'Descrição', dataKey: 'descricao' },
-        { header: 'Tipo', dataKey: 'tipo', width: 18, align: 'center' },
-        { header: 'Entradas (R$)', dataKey: 'entradas', width: 30, align: 'right' },
-        { header: 'Saídas (R$)', dataKey: 'saidas', width: 28, align: 'right' },
-        { header: 'Saldo do Dia', dataKey: 'saldo_dia', width: 28, align: 'right' },
-        { header: 'Saldo Acumulado', dataKey: 'saldo_acumulado', width: 34, align: 'right' },
+        { header: 'Tipo', dataKey: 'tipo', width: 22, align: 'center' },
+        { header: 'Entradas (R$)', dataKey: 'entradas', width: 35, align: 'right' },
+        { header: 'Saídas (R$)', dataKey: 'saidas', width: 35, align: 'right' },
+        { header: 'Saldo Acumulado', dataKey: 'saldo_acumulado', width: 40, align: 'right' },
       ],
       rows,
       summaryRows: [
@@ -195,78 +174,57 @@ export function FluxoCaixaPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[40px]" />
                 <TableHead>Data</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead className="text-right text-emerald-600">Entradas (R$)</TableHead>
                 <TableHead className="text-right text-red-600">Saídas (R$)</TableHead>
-                <TableHead className="text-right">Saldo do Dia (R$)</TableHead>
                 <TableHead className="text-right font-bold text-primary">Saldo Acumulado (R$)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {/* Opening Balance Row */}
               <TableRow className="bg-muted/30">
-                <TableCell />
-                <TableCell className="font-medium italic text-muted-foreground">Saldo Anterior ao Período</TableCell>
-                <TableCell className="text-xs text-muted-foreground italic">Carry-over de meses anteriores</TableCell>
-                <TableCell className="text-right">—</TableCell>
+                <TableCell className="font-medium italic text-muted-foreground whitespace-nowrap">—</TableCell>
+                <TableCell className="font-medium italic text-muted-foreground">Saldo Anterior ao Período (Carry-over)</TableCell>
                 <TableCell className="text-right">—</TableCell>
                 <TableCell className="text-right">—</TableCell>
                 <TableCell className={`text-right font-bold ${openingBalance >= 0 ? 'text-primary' : 'text-red-500'}`}>{formatCurrency(openingBalance)}</TableCell>
               </TableRow>
 
-              {dates.map((date) => {
-                const data = flowByDate[date]
-                const dailyBalance = data.income - data.expense
-                runningBalance += dailyBalance
-                const isExpanded = expandedDates[date]
-
+              {transactions.map((item: any) => {
+                const amount = Number(item.amount)
+                if (item.type === 'income') runningBalance += amount
+                if (item.type === 'expense') runningBalance -= amount
+                
                 return (
-                  <>
-                    {/* Group row for the day */}
-                    <TableRow
-                      key={date}
-                      className="cursor-pointer hover:bg-muted/30 bg-muted/10 font-medium"
-                      onClick={() => toggleDate(date)}
-                    >
-                      <TableCell className="text-center text-muted-foreground">
-                        {isExpanded ? <ChevronUp className="h-4 w-4 inline" /> : <ChevronDown className="h-4 w-4 inline" />}
-                      </TableCell>
-                      <TableCell className="font-semibold">{formatDate(date)}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{data.items.length} lançamento(s)</TableCell>
-                      <TableCell className="text-right text-emerald-600 font-medium">{data.income > 0 ? formatCurrency(data.income) : '—'}</TableCell>
-                      <TableCell className="text-right text-red-600 font-medium">{data.expense > 0 ? formatCurrency(data.expense) : '—'}</TableCell>
-                      <TableCell className={`text-right font-bold ${dailyBalance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(dailyBalance)}</TableCell>
-                      <TableCell className="text-right font-bold text-primary text-lg">{formatCurrency(runningBalance)}</TableCell>
-                    </TableRow>
-
-                    {/* Expanded: individual transactions */}
-                    {isExpanded && data.items.map((item: any) => (
-                      <TableRow key={item.id} className="bg-muted/5 text-sm">
-                        <TableCell />
-                        <TableCell className="pl-8 text-muted-foreground text-xs">{formatDate(item.due_date)}</TableCell>
-                        <TableCell className="pl-4">
-                          <div className="flex items-center gap-2">
-                            <Badge variant={item.type === 'income' ? 'success' : 'destructive'} className="text-xs shrink-0">
-                              {item.type === 'income' ? 'Entrada' : 'Saída'}
-                            </Badge>
-                            <span>{item.description}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right text-emerald-600">{item.type === 'income' ? formatCurrency(item.amount) : '—'}</TableCell>
-                        <TableCell className="text-right text-red-600">{item.type === 'expense' ? formatCurrency(item.amount) : '—'}</TableCell>
-                        <TableCell />
-                        <TableCell />
-                      </TableRow>
-                    ))}
-                  </>
+                  <TableRow key={item.id} className="hover:bg-muted/30">
+                    <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+                      {item.paid_at ? formatDate(item.paid_at) : '—'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={item.type === 'income' ? 'success' : 'destructive'} className="text-xs shrink-0">
+                          {item.type === 'income' ? 'Entrada' : 'Saída'}
+                        </Badge>
+                        <span className="font-medium">{item.description}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right text-emerald-600 font-medium">
+                      {item.type === 'income' ? formatCurrency(amount) : '—'}
+                    </TableCell>
+                    <TableCell className="text-right text-red-600 font-medium">
+                      {item.type === 'expense' ? formatCurrency(amount) : '—'}
+                    </TableCell>
+                    <TableCell className={`text-right font-bold ${runningBalance >= 0 ? 'text-primary' : 'text-red-500'}`}>
+                      {formatCurrency(runningBalance)}
+                    </TableCell>
+                  </TableRow>
                 )
               })}
 
-              {dates.length === 0 && (
+              {transactions.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">Nenhuma transação recebida/paga registrada neste período.</TableCell>
+                  <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">Nenhuma transação recebida/paga registrada neste período.</TableCell>
                 </TableRow>
               )}
             </TableBody>
