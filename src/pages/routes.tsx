@@ -23,6 +23,7 @@ import { ItinerarioPdfPage } from './app/relatorios/itinerario-pdf'
 import { ItinerarioMensalPdfPage } from './app/relatorios/itinerario-mensal-pdf'
 import { MapaPage } from './app/mapa/mapa'
 import { ConfiguracoesPage } from './app/configuracoes/configuracoes'
+import { PropostasPage } from './app/comercial/propostas'
 // Portal do Cliente
 import { ClientLogin } from './cliente/login'
 import { ClientDashboard } from './cliente/dashboard'
@@ -109,6 +110,10 @@ export const router = createBrowserRouter([
       {
         path: '/mapa',
         Component: () => <PrivateRoute><MapaPage /></PrivateRoute>,
+      },
+      {
+        path: '/comercial/propostas',
+        Component: () => <PrivateRoute><PropostasPage /></PrivateRoute>,
       },
       {
         path: '/configuracoes',

@@ -6,7 +6,7 @@ import {
   LogOut, User, LayoutDashboard, Users, CalendarDays, 
   ClipboardList, FileBarChart, Wallet, BarChart3, Settings, 
   ChevronDown, Cpu, TrendingUp, Receipt, BadgeDollarSign, 
-  UserCog, MapPin 
+  UserCog, MapPin, Briefcase, FileSignature
 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,13 @@ export const NAV_ITEMS: NavItem[] = [
     items: [
       { label: 'Agendamentos', to: '/agendamentos', icon: CalendarDays },
       { label: 'Ordens de Serviço', to: '/ordens-de-servico', icon: ClipboardList },
+    ],
+  },
+  {
+    label: 'Comercial',
+    icon: Briefcase,
+    items: [
+      { label: 'Propostas & Contratos', to: '/comercial/propostas', icon: FileSignature },
     ],
   },
   {
