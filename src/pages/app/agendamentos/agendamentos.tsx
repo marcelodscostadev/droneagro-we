@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -52,6 +52,18 @@ export function AgendamentosPage() {
   const [open, setOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [reagendando, setReagendando] = useState<any | null>(null)
+  
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [agToCancel, setAgToCancel] = useState<any>(null)
+
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [agToDelete, setAgToDelete] = useState<any>(null)
+  
+  const today = new Date()
+  const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
+  const [tabFilter, setTabFilter] = useState<'ALL'|'PENDING'|'SCHEDULED'|'FINISHED'|'CANCELLED'>('ALL')
+  const [descFilter, setDescFilter] = useState('')
+  
   const queryClient = useQueryClient()
 
   const { data: clients = [] } = useQuery({
@@ -221,6 +233,8 @@ export function AgendamentosPage() {
     onSuccess: async (_, ag) => {
       toast.success('Agendamento cancelado.')
       queryClient.invalidateQueries({ queryKey: ['agendamentos'] })
+      setCancelOpen(false)
+      setAgToCancel(null)
       // Buscar e-mail do cliente
       if (ag.client_id) {
         const { data: profile } = await supabase
@@ -253,6 +267,8 @@ export function AgendamentosPage() {
     onSuccess: () => {
       toast.success('Agendamento excluído do sistema.')
       queryClient.invalidateQueries({ queryKey: ['agendamentos'] })
+      setDeleteOpen(false)
+      setAgToDelete(null)
     },
     onError: () => toast.error('Erro ao excluir agendamento.'),
   })
@@ -264,6 +280,41 @@ export function AgendamentosPage() {
       setValue('price_per_ha', client.default_price_per_ha)
     }
   }
+
+  const filteredAgendamentos = (agendamentos || []).filter((ag: any) => {
+    let match = true
+    if (monthFilter) {
+      match = !!(ag.scheduled_at && ag.scheduled_at.startsWith(monthFilter))
+    }
+    if (match && descFilter) {
+      const c = ag.client?.name || ''
+      const t = ag.technician?.name || ''
+      match = c.toLowerCase().includes(descFilter.toLowerCase()) || t.toLowerCase().includes(descFilter.toLowerCase())
+    }
+    return match
+  })
+
+  let pendentes = 0
+  let agendados = 0
+  let finalizados = 0
+  let cancelados = 0
+  let totalPeriodo = filteredAgendamentos.length
+
+  filteredAgendamentos.forEach((ag: any) => {
+    if (ag.status === 'pending_client') pendentes++
+    else if (ag.status === 'scheduled' || ag.status === 'rescheduled') agendados++
+    else if (ag.status === 'finished' || ag.status === 'completed') finalizados++
+    else if (ag.status === 'cancelled') cancelados++
+  })
+
+  const filteredAndTabbed = filteredAgendamentos.filter((ag: any) => {
+    if (tabFilter === 'ALL') return true
+    if (tabFilter === 'PENDING') return ag.status === 'pending_client'
+    if (tabFilter === 'SCHEDULED') return ag.status === 'scheduled' || ag.status === 'rescheduled'
+    if (tabFilter === 'FINISHED') return ag.status === 'finished' || ag.status === 'completed'
+    if (tabFilter === 'CANCELLED') return ag.status === 'cancelled'
+    return true
+  })
 
   const openNew = () => {
     setEditingId(null)
@@ -306,15 +357,87 @@ export function AgendamentosPage() {
             <p className="text-sm text-muted-foreground">Controle de visitas e serviços agendados</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
           <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ['agendamentos'] })}>
-            <RefreshCcw className="h-4 w-4" />
+            <RefreshCcw className="h-4 w-4 mr-2" />Atualizar
           </Button>
-          <Button variant="outline"><Filter className="h-4 w-4 mr-2" />Filtros</Button>
-          
           <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Agendamento</Button>
-          
-          <Dialog open={open} onOpenChange={setOpen}>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <label className="text-sm font-medium text-muted-foreground">Mês:</label>
+        <input 
+          type="month" 
+          value={monthFilter}
+          onChange={(e) => {
+            setMonthFilter(e.target.value)
+            setTabFilter('ALL')
+          }}
+          className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        {monthFilter && (
+          <Button variant="ghost" size="sm" onClick={() => setMonthFilter('')} className="text-muted-foreground h-9 px-3">
+            Histórico Completo
+          </Button>
+        )}
+        <Input 
+          placeholder="Buscar cliente ou técnico..." 
+          value={descFilter}
+          onChange={e => setDescFilter(e.target.value)}
+          className="w-[250px] h-9 ml-auto"
+        />
+      </div>
+
+      <div className="grid grid-cols-5 gap-4">
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'PENDING' ? 'border-amber-500 ring-1 ring-amber-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'PENDING' ? 'ALL' : 'PENDING')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Aprovação Pendente</p>
+            <p className="text-2xl font-bold text-amber-500">{pendentes}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'SCHEDULED' ? 'border-blue-500 ring-1 ring-blue-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'SCHEDULED' ? 'ALL' : 'SCHEDULED')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Agendados</p>
+            <p className="text-2xl font-bold text-blue-500">{agendados}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'FINISHED' ? 'border-emerald-500 ring-1 ring-emerald-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'FINISHED' ? 'ALL' : 'FINISHED')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Finalizados</p>
+            <p className="text-2xl font-bold text-emerald-500">{finalizados}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'CANCELLED' ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'CANCELLED' ? 'ALL' : 'CANCELLED')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Cancelados</p>
+            <p className="text-2xl font-bold text-red-500">{cancelados}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'ALL' ? 'border-primary ring-1 ring-primary' : ''}`}
+          onClick={() => setTabFilter('ALL')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Total (Período)</p>
+            <p className="text-2xl font-bold text-primary">{totalPeriodo}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{editingId ? 'Editar Agendamento' : 'Criar Agendamento'}</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit((d) => saveOrder.mutate(d))} className="space-y-4 py-2">
@@ -407,9 +530,6 @@ export function AgendamentosPage() {
               </form>
             </DialogContent>
           </Dialog>
-        </div>
-      </div>
-
       {/* Banner de solicitações pendentes */}
       {agendamentos.filter((ag: any) => ag.status === 'pending_client').length > 0 && (
         <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 animate-in fade-in">
@@ -423,7 +543,7 @@ export function AgendamentosPage() {
       <Card className="border-muted/50">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm text-muted-foreground font-normal">
-            Exibindo {agendamentos.length} agendamentos
+            Exibindo {filteredAndTabbed.length} agendamentos
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -447,14 +567,14 @@ export function AgendamentosPage() {
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                   </TableCell>
                 </TableRow>
-              ) : agendamentos.length === 0 ? (
+              ) : filteredAndTabbed.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                     Nenhum agendamento encontrado.
                   </TableCell>
                 </TableRow>
               ) : (
-                agendamentos.map((ag: any) => {
+                filteredAndTabbed.map((ag: any) => {
                   const s = STATUS_MAP[ag.status] || STATUS_MAP['scheduled']
                   return (
                     <TableRow key={ag.id}>
@@ -509,9 +629,8 @@ export function AgendamentosPage() {
                               size="sm"
                               className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950 h-8 px-2 text-xs font-semibold"
                               onClick={() => {
-                                if (confirm('Tem certeza que deseja cancelar este agendamento? O cliente será notificado por e-mail.')) {
-                                  cancelarOS.mutate(ag)
-                                }
+                                setAgToCancel(ag)
+                                setCancelOpen(true)
                               }}
                               disabled={cancelarOS.isPending}
                               title="Cancelar agendamento"
@@ -527,9 +646,8 @@ export function AgendamentosPage() {
                             size="sm"
                             className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950 h-8 px-2"
                             onClick={() => {
-                              if (confirm('Atenção: Tem certeza que deseja EXCLUIR PERMANENTEMENTE este agendamento do banco de dados? (O cliente NÃO será notificado)')) {
-                                excluirOS.mutate(ag.id)
-                              }
+                              setAgToDelete(ag)
+                              setDeleteOpen(true)
                             }}
                             disabled={excluirOS.isPending}
                             title="Excluir Permanentemente"
@@ -600,6 +718,66 @@ export function AgendamentosPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Cancelamento */}
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar Agendamento</DialogTitle>
+            <DialogDescription>
+              {agToCancel && (
+                <>
+                  Você está prestes a cancelar o agendamento do cliente <strong>{agToCancel.client?.name}</strong> previsto para <strong>{formatDate(agToCancel.scheduled_at)}</strong>.
+                  <br /><br />
+                  Tem certeza? <strong>O cliente será notificado por e-mail</strong> sobre este cancelamento.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end gap-2 mt-4">
+            <Button type="button" variant="outline" onClick={() => setCancelOpen(false)}>Voltar</Button>
+            <Button 
+              type="button" 
+              variant="destructive" 
+              onClick={() => agToCancel && cancelarOS.mutate(agToCancel)}
+              disabled={cancelarOS.isPending}
+            >
+              {cancelarOS.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Sim, Cancelar Agendamento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Exclusão */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir Agendamento Permanentemente</DialogTitle>
+            <DialogDescription>
+              {agToDelete && (
+                <>
+                  Você está prestes a apagar o agendamento de <strong>{agToDelete.client?.name}</strong> do banco de dados.
+                  <br /><br />
+                  <strong>ATENÇÃO:</strong> Esta ação <strong>NÃO</strong> notificará o cliente e <strong>não pode ser desfeita</strong>. Use isso apenas para remover registros incorretos ou testes.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end gap-2 mt-4">
+            <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
+            <Button 
+              type="button" 
+              variant="destructive" 
+              onClick={() => agToDelete && excluirOS.mutate(agToDelete.id)}
+              disabled={excluirOS.isPending}
+            >
+              {excluirOS.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Excluir Permanentemente
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
