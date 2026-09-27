@@ -31,6 +31,7 @@ export function ContasPagarPage() {
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [tabFilter, setTabFilter] = useState<'ALL'|'OVERDUE'|'TODAY'|'FUTURE'|'PAID'>('ALL')
+  const [descFilter, setDescFilter] = useState('')
   
   const queryClient = useQueryClient()
   const { register, handleSubmit, control, reset, watch } = useForm<any>({ defaultValues: { type: 'expense', status: 'pending' } })
@@ -185,10 +186,15 @@ export function ContasPagarPage() {
   const todayStr = new Date().toLocaleDateString('en-CA')
 
   const filteredTransactions = transactions.filter((t: any) => {
-    if (!monthFilter) return true
-    // monthFilter is YYYY-MM
-    // match either due_date or created_at being in that month? Usually we filter by due_date for Contas a Pagar
-    return t.due_date && t.due_date.startsWith(monthFilter)
+    let match = true
+    if (monthFilter) {
+      match = !!(t.due_date && t.due_date.startsWith(monthFilter))
+    }
+    if (match && descFilter) {
+      const desc = t.description || ''
+      match = desc.toLowerCase().includes(descFilter.toLowerCase())
+    }
+    return match
   })
 
   let vencidos = 0
@@ -296,21 +302,27 @@ export function ContasPagarPage() {
       </div>
 
       <div className="flex items-center gap-4">
-        <label className="text-sm font-medium text-muted-foreground">Filtrar por Mês:</label>
+        <label className="text-sm font-medium text-muted-foreground">Mês:</label>
         <input 
           type="month" 
           value={monthFilter}
           onChange={(e) => {
             setMonthFilter(e.target.value)
-            setTabFilter('ALL') // reset tab on month change
+            setTabFilter('ALL')
           }}
-          className="flex h-10 w-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         />
         {monthFilter && (
-          <Button variant="ghost" size="sm" onClick={() => setMonthFilter('')} className="text-muted-foreground">
-            Ver Todo o Histórico
+          <Button variant="ghost" size="sm" onClick={() => setMonthFilter('')} className="text-muted-foreground h-9 px-3">
+            Histórico Completo
           </Button>
         )}
+        <Input 
+          placeholder="Buscar lançamento..." 
+          value={descFilter}
+          onChange={e => setDescFilter(e.target.value)}
+          className="w-[200px] h-9 ml-auto"
+        />
       </div>
 
       <div className="grid grid-cols-5 gap-4">
@@ -319,7 +331,7 @@ export function ContasPagarPage() {
           onClick={() => setTabFilter(tabFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
         >
           <CardContent className="p-4 text-center">
-            <p className="text-sm font-medium text-muted-foreground mb-1">Vencidos (R$)</p>
+            <p className="text-sm font-medium text-muted-foreground mb-1">Atrasados</p>
             <p className="text-2xl font-bold text-red-500">{formatCurrency(vencidos)}</p>
           </CardContent>
         </Card>
@@ -328,7 +340,7 @@ export function ContasPagarPage() {
           onClick={() => setTabFilter(tabFilter === 'TODAY' ? 'ALL' : 'TODAY')}
         >
           <CardContent className="p-4 text-center">
-            <p className="text-sm font-medium text-muted-foreground mb-1">Vencem hoje (R$)</p>
+            <p className="text-sm font-medium text-muted-foreground mb-1">Vencem Hoje</p>
             <p className="text-2xl font-bold text-orange-500">{formatCurrency(vencemHoje)}</p>
           </CardContent>
         </Card>
@@ -337,7 +349,7 @@ export function ContasPagarPage() {
           onClick={() => setTabFilter(tabFilter === 'FUTURE' ? 'ALL' : 'FUTURE')}
         >
           <CardContent className="p-4 text-center">
-            <p className="text-sm font-medium text-muted-foreground mb-1">A vencer (R$)</p>
+            <p className="text-sm font-medium text-muted-foreground mb-1">A Vencer</p>
             <p className="text-2xl font-bold text-blue-500">{formatCurrency(aVencer)}</p>
           </CardContent>
         </Card>
@@ -346,7 +358,7 @@ export function ContasPagarPage() {
           onClick={() => setTabFilter(tabFilter === 'PAID' ? 'ALL' : 'PAID')}
         >
           <CardContent className="p-4 text-center">
-            <p className="text-sm font-medium text-muted-foreground mb-1">Pagos (R$)</p>
+            <p className="text-sm font-medium text-muted-foreground mb-1">Pagos</p>
             <p className="text-2xl font-bold text-green-500">{formatCurrency(pagos)}</p>
           </CardContent>
         </Card>
@@ -355,7 +367,7 @@ export function ContasPagarPage() {
           onClick={() => setTabFilter('ALL')}
         >
           <CardContent className="p-4 text-center">
-            <p className="text-sm font-medium text-muted-foreground mb-1">Total do período (R$)</p>
+            <p className="text-sm font-medium text-muted-foreground mb-1">Total (Período)</p>
             <p className="text-2xl font-bold text-primary">{formatCurrency(totalPeriodo)}</p>
           </CardContent>
         </Card>
