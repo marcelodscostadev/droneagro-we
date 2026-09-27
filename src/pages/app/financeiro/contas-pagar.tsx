@@ -23,7 +23,10 @@ export function ContasPagarPage() {
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [editingTransId, setEditingTransId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [transToDelete, setTransToDelete] = useState<string | null>(null)
+  const [transToDelete, setTransToDelete] = useState<any>(null)
+  
+  const [markPaidOpen, setMarkPaidOpen] = useState(false)
+  const [transToMarkPaid, setTransToMarkPaid] = useState<any>(null)
   
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
@@ -143,8 +146,8 @@ export function ContasPagarPage() {
     setOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    setTransToDelete(id)
+  const handleDelete = (t: any) => {
+    setTransToDelete(t)
     setDeleteOpen(true)
   }
 
@@ -155,7 +158,12 @@ export function ContasPagarPage() {
         .eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions_expense'] })
+    onSuccess: () => {
+      toast.success('Conta marcada como paga com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['transactions_expense'] })
+      setMarkPaidOpen(false)
+      setTransToMarkPaid(null)
+    }
   })
 
   const toggleSelectAll = () => {
@@ -364,46 +372,75 @@ export function ContasPagarPage() {
                     onChange={toggleSelectAll} 
                   />
                 </TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Emissão</TableHead>
-                <TableHead>Vencimento</TableHead>
-                <TableHead>Pagamento</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead>Centro de Custo</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
+                <TableHead>Lançamento</TableHead>
+                <TableHead>Prazos</TableHead>
                 <TableHead className="text-center">Status</TableHead>
-                <TableHead className="text-right">Ação</TableHead>
+                <TableHead className="text-right">Valor (R$)</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredAndTabbedTransactions.map((t: any) => (
-                <TableRow key={t.id} className={selectedRows.includes(t.id) ? "bg-primary/5 hover:bg-primary/10" : ""}>
-                  <TableCell className="text-center">
+                <TableRow key={t.id} className={selectedRows.includes(t.id) ? "bg-primary/5 hover:bg-primary/10 transition-colors" : "hover:bg-muted/30 transition-colors"}>
+                  <TableCell className="text-center align-middle">
                     <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
                       checked={selectedRows.includes(t.id)}
                       onChange={() => toggleSelectRow(t.id)} 
                     />
                   </TableCell>
-                  <TableCell className="font-medium max-w-[150px] sm:max-w-[200px] md:max-w-[300px] truncate" title={t.description}>
-                    {t.description}
+                  <TableCell className="align-middle">
+                    <div className="font-semibold text-sm max-w-[250px] truncate" title={t.description}>{t.description}</div>
+                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
+                        {t.category?.name || 'Sem categoria'}
+                      </div>
+                      {t.cost_center?.name && (
+                        <>
+                          <span className="text-muted-foreground/30">•</span>
+                          <span>{t.cost_center.name}</span>
+                        </>
+                      )}
+                    </div>
                   </TableCell>
-                  <TableCell>{t.emission_date ? formatDate(t.emission_date) : formatDate(t.created_at)}</TableCell>
-                  <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
-                  <TableCell>{t.paid_at ? formatDate(t.paid_at) : '—'}</TableCell>
-                  <TableCell>{t.category?.name || '—'}</TableCell>
-                  <TableCell>{t.cost_center?.name || '—'}</TableCell>
-                  <TableCell className="text-right font-bold text-red-600">{formatCurrency(t.amount)}</TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant={t.status === 'paid' ? 'success' : 'warning'}>{t.status === 'paid' ? 'Pago' : 'Pendente'}</Badge>
+                  <TableCell className="align-middle">
+                    <div className="text-sm flex items-center gap-1">
+                      <span className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold">Venc:</span>
+                      <span className="font-medium">{formatDate(t.due_date)}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {t.status === 'paid' ? (
+                        <span className="text-emerald-600 font-medium">Pgto: {t.paid_at ? formatDate(t.paid_at) : '—'}</span>
+                      ) : (
+                        <span>Emissão: {t.emission_date ? formatDate(t.emission_date) : formatDate(t.created_at)}</span>
+                      )}
+                    </div>
                   </TableCell>
-                  <TableCell className="text-right flex items-center justify-end gap-2">
-                    {t.status === 'pending' && <Button variant="outline" size="sm" onClick={() => markPaid.mutate(t.id)}><CheckCircle className="h-4 w-4 mr-1"/> Pago</Button>}
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEdit(t)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600" onClick={() => handleDelete(t.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                  <TableCell className="text-center align-middle">
+                    <Badge variant={t.status === 'paid' ? 'success' : 'warning'} className="text-[11px] px-2.5 py-0.5 shadow-sm">
+                      {t.status === 'paid' ? 'Pago' : 'Pendente'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right align-middle font-bold text-red-600 text-sm">
+                    {formatCurrency(t.amount)}
+                  </TableCell>
+                  <TableCell className="text-right align-middle">
+                    <div className="flex items-center justify-end gap-1">
+                      {t.status === 'pending' && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" title="Marcar como Pago" onClick={() => {
+                          setTransToMarkPaid(t)
+                          setMarkPaidOpen(true)
+                        }}>
+                          <CheckCircle className="h-4 w-4"/>
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10" title="Editar" onClick={() => handleEdit(t)}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30" title="Excluir" onClick={() => handleDelete(t)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -487,15 +524,48 @@ export function ContasPagarPage() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Excluir Conta</DialogTitle>
+            <DialogTitle>Excluir Conta a Pagar</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir esta conta a pagar? Esta ação não pode ser desfeita.
+              {transToDelete ? (
+                <>
+                  Você está prestes a excluir a conta <strong>"{transToDelete.description}"</strong> no valor de <strong>{formatCurrency(transToDelete.amount)}</strong>.
+                  <br /><br />
+                  Tem certeza? Esta ação <strong>não pode ser desfeita</strong> e apagará permanentemente este registro.
+                </>
+              ) : (
+                'Tem certeza que deseja excluir esta conta a pagar? Esta ação não pode ser desfeita.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="sm:justify-end gap-2 mt-4">
             <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
-            <Button type="button" variant="destructive" onClick={() => transToDelete && deleteTrans.mutate(transToDelete)}>
-              Sim, Excluir
+            <Button type="button" variant="destructive" onClick={() => transToDelete && deleteTrans.mutate(transToDelete.id)}>
+              Sim, Excluir permanentemente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={markPaidOpen} onOpenChange={setMarkPaidOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmar Pagamento</DialogTitle>
+            <DialogDescription>
+              {transToMarkPaid && (
+                <>
+                  Você está prestes a marcar a conta <strong>"{transToMarkPaid.description}"</strong> no valor de <strong>{formatCurrency(transToMarkPaid.amount)}</strong> como paga.
+                  <br /><br />
+                  Esta ação irá atualizar o status para <strong>Pago</strong> e definirá a data de pagamento para hoje. Confirma?
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end gap-2 mt-4">
+            <Button type="button" variant="outline" onClick={() => setMarkPaidOpen(false)}>Cancelar</Button>
+            <Button type="button" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => {
+              if (transToMarkPaid) markPaid.mutate(transToMarkPaid.id)
+            }}>
+              Sim, Confirmar Pagamento
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -20,11 +20,18 @@ export function ContasReceberPage() {
   const [openPdf, setOpenPdf] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [pdfDoc, setPdfDoc] = useState<any>(null)
+  const today = new Date()
+  const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
+  const [tabFilter, setTabFilter] = useState<'ALL'|'OVERDUE'|'TODAY'|'FUTURE'|'PAID'>('ALL')
   const [clientFilter, setClientFilter] = useState('')
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [editingTransId, setEditingTransId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [transToDelete, setTransToDelete] = useState<string | null>(null)
+  const [transToDelete, setTransToDelete] = useState<any>(null)
+  
+  const [markPaidOpen, setMarkPaidOpen] = useState(false)
+  const [transToMarkPaid, setTransToMarkPaid] = useState<any>(null)
+  
   const [docPreview, setDocPreview] = useState<{ url: string; label: string } | null>(null)
   const [uploadDocOpen, setUploadDocOpen] = useState(false)
   const [transToUpload, setTransToUpload] = useState<any>(null)
@@ -141,8 +148,8 @@ export function ContasReceberPage() {
     setOpen(true)
   }
 
-  const handleDelete = (id: string) => {
-    setTransToDelete(id)
+  const handleDelete = (t: any) => {
+    setTransToDelete(t)
     setDeleteOpen(true)
   }
 
@@ -153,7 +160,12 @@ export function ContasReceberPage() {
         .eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+    onSuccess: () => {
+      toast.success('Conta marcada como recebida com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+      setMarkPaidOpen(false)
+      setTransToMarkPaid(null)
+    }
   })
 
   const updateBulletinDocs = useMutation({
@@ -197,24 +209,67 @@ export function ContasReceberPage() {
     onError: (e: any) => toast.error('Erro ao salvar: ' + e.message)
   })
 
+  const todayStr = new Date().toLocaleDateString('en-CA')
+
   const filteredTransactions = transactions.filter((t: any) => {
-    if (!clientFilter) return true
-    const clientName = t.bulletin?.service_orders?.clients?.name || ''
-    // Handle standalone transactions via description if they mention a client
-    const desc = t.description || ''
-    return clientName.toLowerCase().includes(clientFilter.toLowerCase()) || 
-           desc.toLowerCase().includes(clientFilter.toLowerCase())
+    let match = true
+    if (monthFilter) {
+      match = !!(t.due_date && t.due_date.startsWith(monthFilter))
+    }
+    if (match && clientFilter) {
+      const clientName = t.bulletin?.service_orders?.clients?.name || ''
+      const desc = t.description || ''
+      match = clientName.toLowerCase().includes(clientFilter.toLowerCase()) || 
+              desc.toLowerCase().includes(clientFilter.toLowerCase())
+    }
+    return match
   })
 
-  const totalRecebido = filteredTransactions.filter((t: any) => t.status === 'paid').reduce((acc: number, t: any) => acc + t.amount, 0)
-  const totalPendente = filteredTransactions.filter((t: any) => t.status === 'pending').reduce((acc: number, t: any) => acc + t.amount, 0)
-  const totalGeral = filteredTransactions.reduce((acc: number, t: any) => acc + t.amount, 0)
+  let vencidos = 0
+  let vencemHoje = 0
+  let aVencer = 0
+  let pagos = 0
+  let totalPeriodo = 0
+
+  filteredTransactions.forEach((t: any) => {
+    const val = Number(t.amount) || 0
+    totalPeriodo += val
+    
+    if (t.status === 'paid') {
+      pagos += val
+    } else {
+      if (t.due_date < todayStr) {
+        vencidos += val
+      } else if (t.due_date === todayStr) {
+        vencemHoje += val
+      } else {
+        aVencer += val
+      }
+    }
+  })
+
+  const filteredAndTabbedTransactions = filteredTransactions.filter((t: any) => {
+    if (tabFilter === 'ALL') return true
+    if (tabFilter === 'PAID') return t.status === 'paid'
+    
+    if (t.status === 'paid') return false // from here on, only pending
+    
+    if (tabFilter === 'OVERDUE') return t.due_date < todayStr
+    if (tabFilter === 'TODAY') return t.due_date === todayStr
+    if (tabFilter === 'FUTURE') return t.due_date > todayStr
+    
+    return true
+  })
+
+  const totalRecebido = pagos
+  const totalPendente = vencidos + vencemHoje + aVencer
+  const totalGeral = totalPeriodo
 
   const toggleSelectAll = () => {
-    if (selectedRows.length === filteredTransactions.length) {
+    if (selectedRows.length === filteredAndTabbedTransactions.length) {
       setSelectedRows([])
     } else {
-      setSelectedRows(filteredTransactions.map((t: any) => t.id))
+      setSelectedRows(filteredAndTabbedTransactions.map((t: any) => t.id))
     }
   }
 
@@ -222,12 +277,12 @@ export function ContasReceberPage() {
     setSelectedRows(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id])
   }
 
-  const selectedTotal = filteredTransactions
+  const selectedTotal = filteredAndTabbedTransactions
     .filter((t: any) => selectedRows.includes(t.id))
     .reduce((acc: number, t: any) => acc + t.amount, 0)
 
   function handleGeneratePdf() {
-    const data = filteredTransactions.map((t: any) => ({
+    const data = filteredAndTabbedTransactions.map((t: any) => ({
       descricao: t.description,
       nf: t.bulletin?.invoice_number || '—',
       cliente: t.bulletin?.service_orders?.clients?.name || '—',
@@ -279,12 +334,6 @@ export function ContasReceberPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Input 
-            placeholder="Buscar por cliente..." 
-            value={clientFilter}
-            onChange={e => setClientFilter(e.target.value)}
-            className="w-[250px]"
-          />
           <Button variant="outline" onClick={handleGeneratePdf}>
             <FileText className="h-4 w-4 mr-2" />Emitir Relatório
           </Button>
@@ -298,34 +347,74 @@ export function ContasReceberPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between space-y-0 pb-2">
-              <p className="text-sm font-medium">A Receber</p>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div className="text-2xl font-bold text-amber-500">{formatCurrency(totalPendente)}</div>
+      <div className="flex items-center gap-4">
+        <label className="text-sm font-medium text-muted-foreground">Mês:</label>
+        <input 
+          type="month" 
+          value={monthFilter}
+          onChange={(e) => {
+            setMonthFilter(e.target.value)
+            setTabFilter('ALL')
+          }}
+          className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        {monthFilter && (
+          <Button variant="ghost" size="sm" onClick={() => setMonthFilter('')} className="text-muted-foreground h-9 px-3">
+            Histórico Completo
+          </Button>
+        )}
+        <Input 
+          placeholder="Buscar cliente..." 
+          value={clientFilter}
+          onChange={e => setClientFilter(e.target.value)}
+          className="w-[200px] h-9 ml-auto"
+        />
+      </div>
+
+      <div className="grid grid-cols-5 gap-4">
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'OVERDUE' ? 'border-red-500 ring-1 ring-red-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Atrasados</p>
+            <p className="text-2xl font-bold text-red-500">{formatCurrency(vencidos)}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between space-y-0 pb-2">
-              <p className="text-sm font-medium">Recebido</p>
-              <CheckCircle className="h-4 w-4 text-muted-foreground" />
-            </div>
-            <div className="text-2xl font-bold text-emerald-500">{formatCurrency(totalRecebido)}</div>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'TODAY' ? 'border-orange-500 ring-1 ring-orange-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'TODAY' ? 'ALL' : 'TODAY')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Vencem Hoje</p>
+            <p className="text-2xl font-bold text-orange-500">{formatCurrency(vencemHoje)}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between space-y-0 pb-2">
-              <p className="text-sm font-medium">Total Geral</p>
-              <div className="p-1 rounded-full bg-primary/10">
-                <TrendingUp className="h-3 w-3 text-primary" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold">{formatCurrency(totalGeral)}</div>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'FUTURE' ? 'border-blue-500 ring-1 ring-blue-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'FUTURE' ? 'ALL' : 'FUTURE')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">A Vencer</p>
+            <p className="text-2xl font-bold text-blue-500">{formatCurrency(aVencer)}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'PAID' ? 'border-emerald-500 ring-1 ring-emerald-500' : ''}`}
+          onClick={() => setTabFilter(tabFilter === 'PAID' ? 'ALL' : 'PAID')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Recebidos</p>
+            <p className="text-2xl font-bold text-emerald-500">{formatCurrency(pagos)}</p>
+          </CardContent>
+        </Card>
+        <Card 
+          className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'ALL' ? 'border-primary ring-1 ring-primary' : ''}`}
+          onClick={() => setTabFilter('ALL')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1">Total (Período)</p>
+            <p className="text-2xl font-bold text-primary">{formatCurrency(totalPeriodo)}</p>
           </CardContent>
         </Card>
       </div>
@@ -337,109 +426,101 @@ export function ContasReceberPage() {
               <TableRow>
                 <TableHead className="w-[40px] text-center">
                   <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
-                    checked={selectedRows.length === filteredTransactions.length && filteredTransactions.length > 0}
+                    checked={selectedRows.length === filteredAndTabbedTransactions.length && filteredAndTabbedTransactions.length > 0}
                     onChange={toggleSelectAll} 
                   />
                 </TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Nota Fiscal</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Emissão</TableHead>
-                <TableHead>Vencimento</TableHead>
-                <TableHead>Pagamento</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
+                <TableHead>Lançamento</TableHead>
+                <TableHead>Cliente / NF</TableHead>
+                <TableHead>Prazos</TableHead>
                 <TableHead className="text-center">Status</TableHead>
-                <TableHead className="text-center">Docs</TableHead>
-                <TableHead className="text-right">Ação</TableHead>
+                <TableHead className="text-right">Valor (R$)</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredTransactions.map((t: any) => (
-                <TableRow key={t.id} className={selectedRows.includes(t.id) ? "bg-primary/5 hover:bg-primary/10" : ""}>
-                  <TableCell className="text-center">
+              {filteredAndTabbedTransactions.map((t: any) => (
+                <TableRow key={t.id} className={selectedRows.includes(t.id) ? "bg-primary/5 hover:bg-primary/10 transition-colors" : "hover:bg-muted/30 transition-colors"}>
+                  <TableCell className="text-center align-middle">
                     <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
                       checked={selectedRows.includes(t.id)}
                       onChange={() => toggleSelectRow(t.id)} 
                     />
                   </TableCell>
-                  <TableCell className="font-medium max-w-[120px] sm:max-w-[150px] md:max-w-[250px] truncate" title={t.description}>
-                    {t.description}
+                  <TableCell className="align-middle">
+                    <div className="font-semibold text-sm max-w-[250px] truncate" title={t.description}>{t.description}</div>
+                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                      {t.category?.name || 'Sem categoria'}
+                    </div>
                   </TableCell>
-                  <TableCell>{t.bulletin?.invoice_number || '—'}</TableCell>
-                  <TableCell className="max-w-[120px] sm:max-w-[150px] md:max-w-[200px] truncate" title={t.bulletin?.service_orders?.clients?.name || '—'}>
-                    {t.bulletin?.service_orders?.clients?.name || '—'}
+                  <TableCell className="align-middle">
+                    <div className="font-medium text-sm max-w-[200px] truncate" title={t.bulletin?.service_orders?.clients?.name || '—'}>
+                      {t.bulletin?.service_orders?.clients?.name || '—'}
+                    </div>
+                    {t.bulletin?.invoice_number ? (
+                      <div className="text-xs text-muted-foreground mt-1 font-medium">NF: {t.bulletin.invoice_number}</div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground/50 mt-1">Sem NF</div>
+                    )}
                   </TableCell>
-                  <TableCell>{t.emission_date ? formatDate(t.emission_date) : formatDate(t.created_at)}</TableCell>
-                  <TableCell className="font-semibold">{formatDate(t.due_date)}</TableCell>
-                  <TableCell>{t.paid_at ? formatDate(t.paid_at) : '—'}</TableCell>
-                  <TableCell>{t.category?.name || '—'}</TableCell>
-                  <TableCell className="text-right font-bold text-emerald-600">{formatCurrency(t.amount)}</TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant={t.status === 'paid' ? 'success' : 'warning'}>{t.status === 'paid' ? 'Recebido' : 'Pendente'}</Badge>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      {t.bulletin?.invoice_url ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
-                          title="Pré-visualizar Nota Fiscal"
-                          onClick={() => setDocPreview({ url: t.bulletin.invoice_url, label: `NF ${t.bulletin?.invoice_number || ''}` })}
-                        >
-                          <FileCheck className="h-3.5 w-3.5" />
-                        </Button>
+                  <TableCell className="align-middle">
+                    <div className="text-sm flex items-center gap-1">
+                      <span className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold">Venc:</span>
+                      <span className="font-medium">{formatDate(t.due_date)}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {t.status === 'paid' ? (
+                        <span className="text-emerald-600 font-medium">Pgto: {t.paid_at ? formatDate(t.paid_at) : '—'}</span>
                       ) : (
-                        <span className="text-xs text-muted-foreground/40" title="Sem NF"><FileCheck className="h-3.5 w-3.5 opacity-20" /></span>
-                      )}
-                      {t.bulletin?.boleto_url ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
-                          title="Pré-visualizar Boleto"
-                          onClick={() => setDocPreview({ url: t.bulletin.boleto_url, label: 'Boleto' })}
-                        >
-                          <Receipt className="h-3.5 w-3.5" />
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/40" title="Sem boleto"><Receipt className="h-3.5 w-3.5 opacity-20" /></span>
-                      )}
-                      {!t.bulletin?.invoice_url && !t.bulletin?.boleto_url && (
-                        <span className="text-xs text-muted-foreground/40">—</span>
+                        <span>Emissão: {t.emission_date ? formatDate(t.emission_date) : formatDate(t.created_at)}</span>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right flex items-center justify-end gap-2">
-                    {t.status === 'pending' && <Button variant="outline" size="sm" onClick={() => markPaid.mutate(t.id)}><CheckCircle className="h-4 w-4 mr-1"/> Recebido</Button>}
-                    {t.bulletin_id && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-blue-600"
-                        title="Anexar / Atualizar NF e Boleto"
-                        onClick={() => {
+                  <TableCell className="text-center align-middle">
+                    <Badge variant={t.status === 'paid' ? 'success' : 'warning'} className="text-[11px] px-2.5 py-0.5 shadow-sm">
+                      {t.status === 'paid' ? 'Recebido' : 'Pendente'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right align-middle font-bold text-emerald-600 text-sm">
+                    {formatCurrency(t.amount)}
+                  </TableCell>
+                  <TableCell className="text-right align-middle">
+                    <div className="flex items-center justify-end gap-1">
+                      {t.status === 'pending' && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" title="Marcar como Recebido" onClick={() => {
+                          setTransToMarkPaid(t)
+                          setMarkPaidOpen(true)
+                        }}>
+                          <CheckCircle className="h-4 w-4"/>
+                        </Button>
+                      )}
+                      {t.bulletin?.invoice_url && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30" title="Ver Nota Fiscal" onClick={() => setDocPreview({ url: t.bulletin.invoice_url, label: `NF ${t.bulletin?.invoice_number || ''}` })}>
+                          <FileCheck className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {t.bulletin?.boleto_url && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30" title="Ver Boleto" onClick={() => setDocPreview({ url: t.bulletin.boleto_url, label: 'Boleto' })}>
+                          <Receipt className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {t.bulletin_id && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-blue-600 hover:bg-blue-50/50" title="Anexar Docs" onClick={() => {
                           setTransToUpload(t)
-                          setUploadDocData({
-                            invoice_number: t.bulletin?.invoice_number || '',
-                            invoice_file: null,
-                            boleto_file: null,
-                            remove_invoice: false,
-                            remove_boleto: false,
-                          })
+                          setUploadDocData({ invoice_number: t.bulletin?.invoice_number || '', invoice_file: null, boleto_file: null, remove_invoice: false, remove_boleto: false })
                           setUploadDocOpen(true)
-                        }}
-                      >
-                        <Upload className="h-4 w-4" />
+                        }}>
+                          <Upload className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10" title="Editar" onClick={() => handleEdit(t)}>
+                        <Edit className="h-4 w-4" />
                       </Button>
-                    )}
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => handleEdit(t)}>
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600" onClick={() => handleDelete(t.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30" title="Excluir" onClick={() => handleDelete(t)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -515,15 +596,48 @@ export function ContasReceberPage() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Excluir Conta</DialogTitle>
+            <DialogTitle>Excluir Conta a Receber</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir esta conta a receber? Esta ação não pode ser desfeita.
+              {transToDelete ? (
+                <>
+                  Você está prestes a excluir a conta <strong>"{transToDelete.description}"</strong> no valor de <strong>{formatCurrency(transToDelete.amount)}</strong>.
+                  <br /><br />
+                  Tem certeza? Esta ação <strong>não pode ser desfeita</strong> e apagará permanentemente este registro.
+                </>
+              ) : (
+                'Tem certeza que deseja excluir esta conta a receber? Esta ação não pode ser desfeita.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="sm:justify-end gap-2 mt-4">
             <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
-            <Button type="button" variant="destructive" onClick={() => transToDelete && deleteTrans.mutate(transToDelete)}>
-              Sim, Excluir
+            <Button type="button" variant="destructive" onClick={() => transToDelete && deleteTrans.mutate(transToDelete.id)}>
+              Sim, Excluir permanentemente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={markPaidOpen} onOpenChange={setMarkPaidOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmar Recebimento</DialogTitle>
+            <DialogDescription>
+              {transToMarkPaid && (
+                <>
+                  Você está prestes a marcar a conta <strong>"{transToMarkPaid.description}"</strong> no valor de <strong>{formatCurrency(transToMarkPaid.amount)}</strong> como recebida.
+                  <br /><br />
+                  Esta ação irá atualizar o status para <strong>Recebido</strong> e definirá a data de pagamento para hoje. Confirma?
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-end gap-2 mt-4">
+            <Button type="button" variant="outline" onClick={() => setMarkPaidOpen(false)}>Cancelar</Button>
+            <Button type="button" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => {
+              if (transToMarkPaid) markPaid.mutate(transToMarkPaid.id)
+            }}>
+              Sim, Confirmar Recebimento
             </Button>
           </DialogFooter>
         </DialogContent>
