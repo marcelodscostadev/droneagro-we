@@ -118,7 +118,6 @@ export function Dashboard() {
         .select('amount')
         .eq('type', 'income')
         .eq('status', 'pending')
-        .gte('due_date', startOfMonth)
       const aReceberMes = contasReceber?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
 
       // 4. Comissões Pendentes
