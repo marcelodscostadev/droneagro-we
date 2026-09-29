@@ -174,7 +174,7 @@ export function ChatWidget() {
 
         if (part.functionCall) {
           const { name, args } = part.functionCall
-          contents.push({ role: 'model', parts: [{ functionCall: part.functionCall }] })
+          contents.push({ role: 'model', parts: candidate.content.parts })
           
           const result = await executeAgentTool(name, args)
           
