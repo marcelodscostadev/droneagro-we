@@ -13,13 +13,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useForm, Controller } from 'react-hook-form'
-import { generateFinancialReport, previewPdf, downloadPdf } from '@/lib/pdf-report'
+import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
 
 export function ContasReceberPage() {
   const [open, setOpen] = useState(false)
-  const [openPdf, setOpenPdf] = useState(false)
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
-  const [pdfDoc, setPdfDoc] = useState<any>(null)
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [tabFilter, setTabFilter] = useState<'ALL'|'OVERDUE'|'TODAY'|'FUTURE'|'PAID'>('ALL')
@@ -316,11 +313,7 @@ export function ContasReceberPage() {
       ],
     })
 
-    const blob = doc.output('blob')
-    const url = URL.createObjectURL(blob)
-    setPdfUrl(url)
-    setPdfDoc(doc)
-    setOpenPdf(true)
+    openPdfInTab(doc)
   }
 
   return (
@@ -640,25 +633,6 @@ export function ContasReceberPage() {
               Sim, Confirmar Recebimento
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {/* PDF Preview Dialog — Relatório */}
-      <Dialog open={openPdf} onOpenChange={(v) => { setOpenPdf(v); if (!v && pdfUrl) URL.revokeObjectURL(pdfUrl) }}>
-        <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0">
-          <DialogHeader className="px-6 pt-5 pb-3 border-b flex-row items-center justify-between">
-            <DialogTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-primary" />Pré-visualização — Contas a Receber</DialogTitle>
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => pdfDoc && downloadPdf(pdfDoc, `contas-receber-${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`)}>
-                <Download className="h-4 w-4 mr-2" />Baixar PDF
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setOpenPdf(false)}><X className="h-4 w-4" /></Button>
-            </div>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden">
-            {pdfUrl && (
-              <iframe src={pdfUrl} className="w-full h-full" title="PDF Preview" />
-            )}
-          </div>
         </DialogContent>
       </Dialog>
 

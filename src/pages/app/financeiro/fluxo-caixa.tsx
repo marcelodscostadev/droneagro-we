@@ -3,12 +3,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { generateFinancialReport, downloadPdf } from '@/lib/pdf-report'
+import { generateFinancialReport, openPdfInTab, downloadPdf } from '@/lib/pdf-report'
 import { cn } from '@/lib/utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -68,10 +67,6 @@ export function FluxoCaixaPage() {
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-
-  const [openPdf, setOpenPdf] = useState(false)
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
-  const [pdfDoc, setPdfDoc] = useState<any>(null)
 
   // ── Saldo inicial ──────────────────────────────────────────────────────────
   const { data: settings } = useQuery({
@@ -233,11 +228,7 @@ export function FluxoCaixaPage() {
       ],
     })
 
-    const blob = doc.output('blob')
-    const url = URL.createObjectURL(blob)
-    setPdfUrl(url)
-    setPdfDoc(doc)
-    setOpenPdf(true)
+    openPdfInTab(doc)
   }
 
   return (
@@ -410,25 +401,6 @@ export function FluxoCaixaPage() {
         </CardContent>
       </Card>
 
-      {/* ── PDF Preview Dialog ── */}
-      <Dialog open={openPdf} onOpenChange={(v) => { setOpenPdf(v); if (!v && pdfUrl) URL.revokeObjectURL(pdfUrl) }}>
-        <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0">
-          <DialogHeader className="px-6 pt-5 pb-3 border-b flex-row items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />Pré-visualização — Fluxo de Caixa
-            </DialogTitle>
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => pdfDoc && downloadPdf(pdfDoc, `fluxo-caixa-${monthFilter}.pdf`)}>
-                <Download className="h-4 w-4 mr-2" />Baixar PDF
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setOpenPdf(false)}><X className="h-4 w-4" /></Button>
-            </div>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden">
-            {pdfUrl && <iframe src={pdfUrl} className="w-full h-full" title="PDF Preview" />}
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

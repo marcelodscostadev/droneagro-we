@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { generateFinancialReport, downloadPdf } from '@/lib/pdf-report'
+import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -17,9 +17,6 @@ import { cn } from '@/lib/utils'
 export function ComissoesPage() {
   const queryClient = useQueryClient()
   const [selectedRows, setSelectedRows] = useState<string[]>([])
-  const [openPdf, setOpenPdf] = useState(false)
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
-  const [pdfDoc, setPdfDoc] = useState<any>(null)
 
   // Retroactive fix for missing categories on commissions
   useEffect(() => {
@@ -241,11 +238,7 @@ export function ComissoesPage() {
       ],
     })
 
-    const blob = doc.output('blob')
-    const url = URL.createObjectURL(blob)
-    setPdfUrl(url)
-    setPdfDoc(doc)
-    setOpenPdf(true)
+    openPdfInTab(doc)
   }
 
   return (
@@ -513,30 +506,6 @@ export function ComissoesPage() {
         </div>
       )}
 
-      {/* Modal de Pré-visualização PDF */}
-      <Dialog open={openPdf} onOpenChange={(v) => { setOpenPdf(v); if (!v && pdfUrl) URL.revokeObjectURL(pdfUrl) }}>
-        <DialogContent className="flex flex-col p-0" style={{ width: '95vw', maxWidth: '95vw', height: '95vh' }}>
-          <DialogHeader className="px-6 pt-5 pb-3 border-b flex-row items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              Pré-visualização — Comissões
-            </DialogTitle>
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => pdfDoc && downloadPdf(pdfDoc, `comissoes-${currentDate.toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric' }).replace('/', '-')}.pdf`)}>
-                <Download className="h-4 w-4 mr-2" />Baixar PDF
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setOpenPdf(false)}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden">
-            {pdfUrl && (
-              <iframe src={`${pdfUrl}#zoom=page-width`} className="w-full h-full" title="PDF Comissões" />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Modal Confirmar Pagamento */}
       <Dialog open={!!payCommissions} onOpenChange={(v) => !v && setPayCommissions(null)}>

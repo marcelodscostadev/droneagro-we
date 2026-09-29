@@ -142,7 +142,18 @@ export function generateFinancialReport(options: PdfReportOptions): jsPDF {
 export function previewPdf(doc: jsPDF): void {
   const blob = doc.output('blob')
   const url = URL.createObjectURL(blob)
-  window.open(url, '_blank')
+  window.open(url + '#zoom=page-width&toolbar=1', '_blank')
+}
+
+/** Abre o PDF em aba nova no tamanho real (substitui o dialog com iframe) */
+export function openPdfInTab(doc: jsPDF): void {
+  const blob = doc.output('blob')
+  const url = URL.createObjectURL(blob)
+  // Pequeno delay para o SO associar o blob antes de abrir
+  const win = window.open('', '_blank')
+  if (win) {
+    win.location.href = url + '#zoom=page-width&toolbar=1'
+  }
 }
 
 export function downloadPdf(doc: jsPDF, fileName: string): void {
