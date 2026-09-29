@@ -29,7 +29,8 @@ export function ChatWidget() {
   
   // Voice State
   const [isListening, setIsListening] = useState(false)
-  const [isMuted, setIsMuted] = useState(false) // Mute para a IA parar de falar
+  const [isMuted, setIsMuted] = useState(true) // Silenciado por padrão
+  const [continuousMode, setContinuousMode] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
@@ -63,15 +64,29 @@ export function ChatWidget() {
 
       recognition.onresult = (event: any) => {
         let currentTranscript = ''
+        let isFinal = false
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           currentTranscript += event.results[i][0].transcript
+          if (event.results[i].isFinal) isFinal = true
         }
         setInput(currentTranscript)
+        
+        // No modo contínuo, envia automaticamente ao detectar fim da frase
+        if (isFinal && continuousModeRef.current) {
+          recognition.stop()
+          setTimeout(() => {
+            const formEvent = new Event('submit', { cancelable: true }) as any
+            handleSend(formEvent, currentTranscript)
+          }, 500)
+        }
       }
 
       recognition.onerror = (event: any) => {
         console.error('Erro de reconhecimento de voz', event.error)
         setIsListening(false)
+        if (continuousModeRef.current && event.error !== 'aborted') {
+          setTimeout(() => recognition.start(), 1000)
+        }
       }
 
       recognition.onend = () => {
@@ -81,6 +96,19 @@ export function ChatWidget() {
       recognitionRef.current = recognition
     }
   }, [])
+
+  const continuousModeRef = useRef(continuousMode)
+  useEffect(() => {
+    continuousModeRef.current = continuousMode
+    if (continuousMode && !isListening) {
+      recognitionRef.current?.start()
+      setIsListening(true)
+      setIsMuted(false) // O modo contínuo precisa da voz ativa para conversar
+    } else if (!continuousMode && isListening) {
+      recognitionRef.current?.stop()
+      setIsListening(false)
+    }
+  }, [continuousMode])
 
   const toggleListening = () => {
     if (isListening) {
@@ -99,22 +127,34 @@ export function ChatWidget() {
 
   // Text to Speech
   const speak = (text: string) => {
-    if (isMuted || !('speechSynthesis' in window)) return
+    if (isMuted || !('speechSynthesis' in window)) {
+      if (continuousModeRef.current && !isListening) {
+        recognitionRef.current?.start()
+        setIsListening(true)
+      }
+      return
+    }
     
-    // Para falas anteriores
     window.speechSynthesis.cancel()
-
-    // Remove marcadores markdown fortes para ler mais naturalmente
     const cleanText = text.replace(/[*_#]/g, '')
-
     const utterance = new SpeechSynthesisUtterance(cleanText)
     utterance.lang = 'pt-BR'
     utterance.rate = 1.1
     
+    utterance.onend = () => {
+      // Retoma a escuta no modo contínuo após falar
+      if (continuousModeRef.current && !isListening) {
+        setTimeout(() => {
+          recognitionRef.current?.start()
+          setIsListening(true)
+        }, 300)
+      }
+    }
+    
     window.speechSynthesis.speak(utterance)
   }
 
-  const handleSend = async (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent, directInput?: string) => {
     e?.preventDefault()
     
     // Se estiver ouvindo, para de ouvir ao enviar
@@ -123,9 +163,10 @@ export function ChatWidget() {
       setIsListening(false)
     }
 
-    if (!input.trim() || isLoading) return
+    if (!directInput && !input.trim()) return
+    if (isLoading) return
 
-    const userMessage = input.trim()
+    const userMessage = directInput || input.trim()
     setInput('')
     
     const newMessages: Message[] = [...messages, { role: 'user', content: userMessage }]
@@ -283,13 +324,13 @@ export function ChatWidget() {
               <Button 
                 type="button" 
                 size="icon" 
-                variant={isListening ? "destructive" : "ghost"} 
-                className={`shrink-0 rounded-full h-8 w-8 transition-all ${isListening ? 'animate-pulse' : 'hover:bg-primary/10 hover:text-primary'}`} 
-                onClick={toggleListening}
+                variant={continuousMode ? "destructive" : "ghost"} 
+                className={`shrink-0 rounded-full h-8 w-8 transition-all ${continuousMode ? 'animate-pulse' : 'hover:bg-primary/10 hover:text-primary'}`} 
+                onClick={() => setContinuousMode(!continuousMode)}
                 disabled={isLoading}
-                title={isListening ? "Parar Gravação" : "Falar com IA"}
+                title={continuousMode ? "Desativar Mãos Livres" : "Ativar Mãos Livres (Conversa Contínua)"}
               >
-                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                {continuousMode ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               </Button>
               <Button 
                 type="submit" 
