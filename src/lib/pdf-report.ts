@@ -147,24 +147,13 @@ export function previewPdf(doc: jsPDF): void {
 
 /** Abre o PDF em aba nova no tamanho real (substitui o dialog com iframe) */
 export function openPdfInTab(doc: jsPDF): void {
-  const blob = doc.output('blob')
+  const pdfData = doc.output('arraybuffer')
+  const blob = new Blob([pdfData], { type: 'application/pdf' })
   const url = URL.createObjectURL(blob)
-  const win = window.open('', '_blank')
-  if (win) {
-    win.document.write(`
-      <html>
-        <head>
-          <title>Pré-visualização do Relatório</title>
-          <style>body { margin: 0; padding: 0; overflow: hidden; }</style>
-        </head>
-        <body>
-          <iframe width="100%" height="100%" src="${url}#zoom=page-width&toolbar=1" frameborder="0"></iframe>
-        </body>
-      </html>
-    `)
-    win.document.close()
-  } else {
-    // Fallback if popup blocked
+  
+  const win = window.open(url, '_blank')
+  if (!win) {
+    // Caso haja bloqueador de pop-ups
     window.location.href = url
   }
 }
