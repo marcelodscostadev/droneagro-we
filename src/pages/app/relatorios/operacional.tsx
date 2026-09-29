@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, TrendingUp, Users, Target, Activity, CheckCircle, Clock, PieChart as PieChartIcon, BarChart3 } from 'lucide-react'
+import { Loader2, TrendingUp, Users, Target, Activity, CheckCircle, Clock, PieChart as PieChartIcon, BarChart3, Truck } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -58,6 +58,17 @@ export function OperacionalPage() {
     }
   })
 
+  const { data: shiftsData = [] } = useQuery({
+    queryKey: ['relatorio_operacional_shifts'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('daily_shifts')
+        .select('shift_date, km_start, km_end, technician:profiles(name)')
+      if (error) throw error
+      return data || []
+    }
+  })
+
   const filteredBoletins = useMemo(() => {
     return boletins.filter((b: any) => {
       const dateRaw = b.service_order?.scheduled_at || b.created_at
@@ -88,6 +99,37 @@ export function OperacionalPage() {
     })
   }, [osData, filterType, monthFilter, dateRange])
 
+  const filteredShifts = useMemo(() => {
+    return shiftsData.filter((s: any) => {
+      const dateRaw = s.shift_date
+      const date = dateRaw ? dateRaw.split('T')[0] : ''
+      if (filterType === 'all') return true
+      if (filterType === 'month' && monthFilter) {
+        return date.startsWith(monthFilter)
+      }
+      if (filterType === 'period' && dateRange.start && dateRange.end) {
+        return date >= dateRange.start && date <= dateRange.end
+      }
+      return true
+    })
+  }, [shiftsData, filterType, monthFilter, dateRange])
+
+  const techKmMap = useMemo(() => {
+    let map: Record<string, number> = {}
+    filteredShifts.forEach((s: any) => {
+      const start = Number(s.km_start) || 0
+      const end = Number(s.km_end) || 0
+      if (end >= start && end > 0) {
+        const km = end - start
+        const name = s.technician?.name || 'Sem Técnico'
+        map[name] = (map[name] || 0) + km
+      }
+    })
+    return map
+  }, [filteredShifts])
+
+  const totalKm = useMemo(() => Object.values(techKmMap).reduce((a,b) => a+b, 0), [techKmMap])
+
   const { techData, clientData, totalHectares, avgHectares } = useMemo(() => {
     let tMap: Record<string, number> = {}
     let cMap: Record<string, number> = {}
@@ -104,7 +146,19 @@ export function OperacionalPage() {
       cMap[cName] = (cMap[cName] || 0) + h
     })
 
-    const techArray = Object.entries(tMap).map(([name, hectares]) => ({ name, hectares })).sort((a,b) => b.hectares - a.hectares)
+    const techArray = Object.entries(tMap).map(([name, hectares]) => ({ 
+      name, 
+      hectares,
+      km: techKmMap[name] || 0
+    })).sort((a,b) => b.hectares - a.hectares)
+
+    // Include technicians that only have KM but no hectares in the period
+    Object.keys(techKmMap).forEach(name => {
+      if (!tMap[name]) {
+        techArray.push({ name, hectares: 0, km: techKmMap[name] })
+      }
+    })
+
     const clientArray = Object.entries(cMap).map(([name, hectares]) => ({ name, hectares })).sort((a,b) => b.hectares - a.hectares)
     
     // Average hectares per day (assuming operations spread over unique days)
@@ -115,7 +169,7 @@ export function OperacionalPage() {
     const avg = uniqueDays > 0 ? (total / uniqueDays) : 0
 
     return { techData: techArray, clientData: clientArray, totalHectares: total, avgHectares: avg }
-  }, [filteredBoletins])
+  }, [filteredBoletins, techKmMap])
 
   const osStatusCount = useMemo(() => {
     const counts: Record<string, number> = { 
@@ -188,7 +242,7 @@ export function OperacionalPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {/* Total de Hectares */}
         <Card className="relative overflow-hidden transition-all hover:shadow-md border-muted/60">
           <div className="absolute -top-4 -right-4 p-4 opacity-[0.03] dark:opacity-10 pointer-events-none">
@@ -204,6 +258,25 @@ export function OperacionalPage() {
             <div className="flex items-baseline gap-1.5 mt-2">
               <h3 className="text-3xl font-bold tracking-tight">{totalHectares.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</h3>
               <span className="text-sm font-medium text-muted-foreground">ha</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total KM */}
+        <Card className="relative overflow-hidden transition-all hover:shadow-md border-muted/60">
+          <div className="absolute -top-4 -right-4 p-4 opacity-[0.03] dark:opacity-10 pointer-events-none">
+            <Truck className="w-32 h-32 text-orange-500" />
+          </div>
+          <CardContent className="p-6 relative z-10 flex flex-col justify-between h-full">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                <Truck className="h-5 w-5" />
+              </div>
+              <p className="text-sm font-medium text-muted-foreground leading-tight">Total<br/>Rodado</p>
+            </div>
+            <div className="flex items-baseline gap-1.5 mt-2">
+              <h3 className="text-3xl font-bold tracking-tight">{totalKm.toLocaleString('pt-BR')}</h3>
+              <span className="text-sm font-medium text-muted-foreground">KM</span>
             </div>
           </CardContent>
         </Card>
@@ -282,13 +355,19 @@ export function OperacionalPage() {
                 <BarChart data={techData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                   <XAxis dataKey="name" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="left" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="right" orientation="right" fontSize={12} tickLine={false} axisLine={false} />
                   <Tooltip 
-                    formatter={(value: any) => [`${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ha`, 'Hectares']}
+                    formatter={(value: any, name: any) => {
+                      if (name === 'Hectares') return [`${Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ha`, name]
+                      return [`${Number(value || 0).toLocaleString('pt-BR')} km`, name]
+                    }}
                     cursor={{fill: 'rgba(0,0,0,0.05)'}}
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />
-                  <Bar dataKey="hectares" name="Hectares" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} verticalAlign="bottom" height={36} />
+                  <Bar yAxisId="left" dataKey="hectares" name="Hectares" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="right" dataKey="km" name="KM Rodado" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
