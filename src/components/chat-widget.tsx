@@ -141,9 +141,9 @@ export function ChatWidget() {
         parts: [{ text: msg.content }]
       }))
 
-      // Chamada direta ao endpoint v1 (suporta gemini-2.0-flash sem problemas)
+      // Chamada direta ao endpoint v1 (suporta gemini-3.8-flash)
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
