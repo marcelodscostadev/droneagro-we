@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { AGENT_TOOLS, executeAgentTool } from '@/lib/agent-tools'
 
 // SDK com endpoint v1 que suporta gemini-2.0-flash
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '')
 
-const SYSTEM_INSTRUCTION = "Você é o Assistente Especialista em Drones e Agronegócio do sistema DroneAgro. Responda de forma clara, prestativa e objetiva. Você entende tudo sobre pulverização, hectares, relatórios financeiros e operação de drones. Quando usar markdown, seja bem formatado."
+const SYSTEM_INSTRUCTION = "Você é o Assistente Especialista em Drones e Agronegócio do sistema DroneAgro. Responda de forma clara, prestativa e objetiva. Você tem as ferramentas 'read_database' e 'write_database' para acessar ou modificar o sistema. SEMPRE confira se a ação é segura e não hesite em usar as ferramentas para ler saldos, relatórios e clientes."
 
 interface Message {
   role: 'user' | 'model'
@@ -136,31 +137,56 @@ export function ChatWidget() {
       if (!apiKey) throw new Error('Chave de API do Gemini ausente.')
 
       // Monta histórico para enviar
-      const contents = newMessages.slice(1).map(msg => ({
+      let contents: any[] = newMessages.slice(1).map(msg => ({
         role: msg.role,
         parts: [{ text: msg.content }]
       }))
 
-      // Chamada direta ao endpoint v1 (suporta gemini-3.8-flash)
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-            contents
-          })
+      let responseText = 'Sem resposta.'
+      let isDone = false
+      let loops = 0
+
+      while (!isDone && loops < 5) {
+        loops++
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+              tools: AGENT_TOOLS,
+              contents
+            })
+          }
+        )
+
+        if (!res.ok) {
+          const errData = await res.json()
+          throw new Error(errData.error?.message || `HTTP ${res.status}`)
         }
-      )
 
-      if (!res.ok) {
-        const errData = await res.json()
-        throw new Error(errData.error?.message || `HTTP ${res.status}`)
+        const data = await res.json()
+        const candidate = data.candidates?.[0]
+        const part = candidate?.content?.parts?.[0]
+
+        if (!part) break
+
+        if (part.functionCall) {
+          const { name, args } = part.functionCall
+          contents.push({ role: 'model', parts: [{ functionCall: part.functionCall }] })
+          
+          const result = await executeAgentTool(name, args)
+          
+          contents.push({
+            role: 'function',
+            parts: [{ functionResponse: { name, response: { result } } }]
+          })
+        } else {
+          responseText = part.text || ''
+          isDone = true
+        }
       }
-
-      const data = await res.json()
-      const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta.'
 
       setMessages(prev => [...prev, { role: 'model', content: responseText }])
       speak(responseText)
