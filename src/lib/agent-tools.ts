@@ -8,10 +8,12 @@ export const AGENT_TOOLS = [{
       parameters: {
         type: "OBJECT",
         properties: {
-          table: { type: "STRING", description: "Nome da tabela (ex: clients, transactions)" },
-          select: { type: "STRING", description: "Colunas para buscar (ex: '*', 'id, name')" },
-          filterColumn: { type: "STRING", description: "Coluna para filtro exato (opcional)" },
-          filterValue: { type: "STRING", description: "Valor para o filtro exato (opcional)" }
+          table: { type: "STRING", description: "Nome da tabela (ex: clients, transactions, daily_shifts)" },
+          select: { type: "STRING", description: "Colunas para buscar (ex: '*', 'id, amount, status')" },
+          matchFiltersJson: { type: "STRING", description: "Filtros exatos em formato JSON stringificado (ex: {\"type\": \"expense\", \"status\": \"pending\"}). Opcional." },
+          dateColumn: { type: "STRING", description: "Coluna de data para filtro (ex: due_date). Opcional." },
+          dateStart: { type: "STRING", description: "Data inicial YYYY-MM-DD. Opcional." },
+          dateEnd: { type: "STRING", description: "Data final YYYY-MM-DD. Opcional." }
         },
         required: ["table", "select"]
       }
@@ -38,8 +40,21 @@ export async function executeAgentTool(name: string, args: any) {
   try {
     if (name === 'read_database') {
       let q = db.from(args.table).select(args.select)
-      if (args.filterColumn && args.filterValue) q = q.eq(args.filterColumn, args.filterValue)
-      const { data, error } = await q.limit(20)
+      
+      if (args.matchFiltersJson) {
+        try {
+          const filters = JSON.parse(args.matchFiltersJson)
+          q = q.match(filters)
+        } catch(e) {}
+      }
+      if (args.dateColumn && args.dateStart) {
+        q = q.gte(args.dateColumn, args.dateStart)
+      }
+      if (args.dateColumn && args.dateEnd) {
+        q = q.lte(args.dateColumn, args.dateEnd)
+      }
+
+      const { data, error } = await q
       if (error) throw error
       return { data }
     }

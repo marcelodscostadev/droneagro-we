@@ -187,7 +187,7 @@ export function ChatWidget() {
       let isDone = false
       let loops = 0
 
-      while (!isDone && loops < 5) {
+      while (!isDone && loops < 20) {
         loops++
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
