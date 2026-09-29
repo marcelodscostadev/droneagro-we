@@ -121,7 +121,7 @@ export function generateFinancialReport(options: PdfReportOptions): jsPDF {
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(9)
       doc.setTextColor(...(row.color || dark))
-      doc.text(row.label, pageWidth - 60, sy)
+      doc.text(row.label, pageWidth - 45, sy, { align: 'right' })
       doc.text(row.value, pageWidth - 12, sy, { align: 'right' })
       sy += 6
     }
@@ -149,10 +149,10 @@ export function previewPdf(doc: jsPDF): void {
 export function openPdfInTab(doc: jsPDF): void {
   const blob = doc.output('blob')
   const url = URL.createObjectURL(blob)
-  // Pequeno delay para o SO associar o blob antes de abrir
-  const win = window.open('', '_blank')
-  if (win) {
-    win.location.href = url + '#zoom=page-width&toolbar=1'
+  const win = window.open(url, '_blank')
+  if (!win) {
+    // Fallback if popup blocked
+    window.location.href = url
   }
 }
 
