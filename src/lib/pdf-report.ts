@@ -149,8 +149,21 @@ export function previewPdf(doc: jsPDF): void {
 export function openPdfInTab(doc: jsPDF): void {
   const blob = doc.output('blob')
   const url = URL.createObjectURL(blob)
-  const win = window.open(url, '_blank')
-  if (!win) {
+  const win = window.open('', '_blank')
+  if (win) {
+    win.document.write(`
+      <html>
+        <head>
+          <title>Pré-visualização do Relatório</title>
+          <style>body { margin: 0; padding: 0; overflow: hidden; }</style>
+        </head>
+        <body>
+          <iframe width="100%" height="100%" src="${url}#zoom=page-width&toolbar=1" frameborder="0"></iframe>
+        </body>
+      </html>
+    `)
+    win.document.close()
+  } else {
     // Fallback if popup blocked
     window.location.href = url
   }
