@@ -179,7 +179,7 @@ export function ChatWidget() {
           const result = await executeAgentTool(name, args)
           
           contents.push({
-            role: 'function',
+            role: 'user',
             parts: [{ functionResponse: { name, response: { result } } }]
           })
         } else {
