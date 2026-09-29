@@ -56,13 +56,26 @@ export function ComissoesPage() {
   
   // Modal Pagar
   const [payCommissions, setPayCommissions] = useState<string[] | null>(null)
-  const [payCommissionDate, setPayCommissionDate] = useState<string>(new Date().toLocaleDateString('en-CA'))
+  const [payCommissionDate, setPayCommissionDate] = useState<string>('')
   
   // Filters
   const [currentDate, setCurrentDate] = useState(new Date())
   const [statusFilter, setStatusFilter] = useState<'pending' | 'paid' | 'all'>('pending')
   const [batchFilter, setBatchFilter] = useState<string | null>(null)
   const [showAllMonths, setShowAllMonths] = useState(false)
+
+  // Retorna o último dia do mês visualizado no formato YYYY-MM-DD
+  const defaultPayDate = useMemo(() => {
+    const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+    return lastDay.toLocaleDateString('en-CA')
+  }, [currentDate])
+
+  // Verifica se a data escolhida pertence ao mês visualizado
+  const payDateOutOfMonth = useMemo(() => {
+    if (!payCommissionDate) return false
+    const [py, pm] = payCommissionDate.split('-').map(Number)
+    return py !== currentDate.getFullYear() || pm !== (currentDate.getMonth() + 1)
+  }, [payCommissionDate, currentDate])
 
   const y = currentDate.getFullYear()
   const m = String(currentDate.getMonth() + 1).padStart(2, '0')
@@ -454,7 +467,7 @@ export function ComissoesPage() {
                       {t.status === 'pending' ? (
                         <Button variant="outline" size="sm" onClick={() => {
                           setPayCommissions([t.id])
-                          setPayCommissionDate(new Date().toLocaleDateString('en-CA'))
+                          setPayCommissionDate(defaultPayDate)
                         }} className="h-8">
                           <CheckCircle className="h-4 w-4 mr-1 text-emerald-500"/> Pagar
                         </Button>
@@ -488,7 +501,7 @@ export function ComissoesPage() {
           <div className="flex items-center gap-2 ml-2">
             <Button size="sm" onClick={() => {
               setPayCommissions(selectedRows)
-              setPayCommissionDate(new Date().toLocaleDateString('en-CA'))
+              setPayCommissionDate(defaultPayDate)
             }} className="h-7 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white">
               <CheckCircle className="h-3 w-3 mr-1" />Baixar Selecionadas
             </Button>
@@ -539,6 +552,16 @@ export function ComissoesPage() {
                 value={payCommissionDate} 
                 onChange={(e) => setPayCommissionDate(e.target.value)}
               />
+              {payDateOutOfMonth && (
+                <p className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2 flex items-start gap-2">
+                  <span className="mt-0.5">⚠️</span>
+                  <span>
+                    A data selecionada é de um mês diferente do mês de competência das comissões
+                    (<strong>{currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</strong>).
+                    Isso pode gerar divergência no fluxo de caixa. Confirme apenas se intencional.
+                  </span>
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>

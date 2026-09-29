@@ -175,6 +175,7 @@ export function FluxoCaixaPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Data</TableHead>
+                <TableHead className="text-center">Tipo</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead className="text-right text-emerald-600">Entradas (R$)</TableHead>
                 <TableHead className="text-right text-red-600">Saídas (R$)</TableHead>
@@ -185,7 +186,8 @@ export function FluxoCaixaPage() {
               {/* Opening Balance Row */}
               <TableRow className="bg-muted/30">
                 <TableCell className="font-medium italic text-muted-foreground whitespace-nowrap">—</TableCell>
-                <TableCell className="font-medium italic text-muted-foreground">Saldo Anterior ao Período (Carry-over)</TableCell>
+                <TableCell className="font-medium italic text-muted-foreground text-center">—</TableCell>
+                <TableCell className="font-medium italic text-muted-foreground">Carry-over do período anterior</TableCell>
                 <TableCell className="text-right">—</TableCell>
                 <TableCell className="text-right">—</TableCell>
                 <TableCell className={`text-right font-bold ${openingBalance >= 0 ? 'text-primary' : 'text-red-500'}`}>{formatCurrency(openingBalance)}</TableCell>
@@ -201,13 +203,13 @@ export function FluxoCaixaPage() {
                     <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
                       {item.paid_at ? formatDate(item.paid_at) : '—'}
                     </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={item.type === 'income' ? 'success' : 'destructive'} className="text-xs">
+                        {item.type === 'income' ? 'Entrada' : 'Saída'}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={item.type === 'income' ? 'success' : 'destructive'} className="text-xs shrink-0">
-                          {item.type === 'income' ? 'Entrada' : 'Saída'}
-                        </Badge>
-                        <span className="font-medium">{item.description}</span>
-                      </div>
+                      <span className="font-medium">{item.description}</span>
                     </TableCell>
                     <TableCell className="text-right text-emerald-600 font-medium">
                       {item.type === 'income' ? formatCurrency(amount) : '—'}
@@ -224,7 +226,7 @@ export function FluxoCaixaPage() {
 
               {transactions.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">Nenhuma transação recebida/paga registrada neste período.</TableCell>
+                  <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">Nenhuma transação recebida/paga registrada neste período.</TableCell>
                 </TableRow>
               )}
             </TableBody>
