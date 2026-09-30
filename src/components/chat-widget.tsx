@@ -11,7 +11,12 @@ import { AGENT_TOOLS, executeAgentTool } from '@/lib/agent-tools'
 // SDK com endpoint v1 que suporta gemini-2.0-flash
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '')
 
-const SYSTEM_INSTRUCTION = "Você é o Assistente Especialista em Drones e Agronegócio do sistema DroneAgro. Responda de forma clara, prestativa e objetiva. Você tem as ferramentas 'read_database' e 'write_database' para acessar ou modificar o sistema. SEMPRE confira se a ação é segura e não hesite em usar as ferramentas para ler saldos, relatórios e clientes."
+const getSystemInstruction = () => {
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('pt-BR');
+  const timeStr = today.toLocaleTimeString('pt-BR');
+  return `Você é o Assistente Especialista em Drones e Agronegócio do sistema DroneAgro. Responda de forma clara, prestativa e objetiva. Você tem as ferramentas 'read_database' e 'write_database' para acessar ou modificar o sistema. SEMPRE confira se a ação é segura e não hesite em usar as ferramentas para ler saldos, relatórios e clientes. INFORMAÇÃO DE CONTEXTO MUNDIAL: A data atual do sistema é ${dateStr} e a hora é ${timeStr}. Quando o usuário disser "hoje", "este mês", "ontem", "amanhã", etc, use sempre esta data base para suas consultas na base de dados e respostas.`
+}
 
 interface Message {
   role: 'user' | 'model'
@@ -195,7 +200,7 @@ export function ChatWidget() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+              system_instruction: { parts: [{ text: getSystemInstruction() }] },
               tools: AGENT_TOOLS,
               contents
             })
