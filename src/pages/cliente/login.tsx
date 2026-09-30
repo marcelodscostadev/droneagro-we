@@ -115,7 +115,13 @@ export function ClientLogin() {
               <p className="text-muted-foreground text-sm">Insira suas credenciais para acessar</p>
             </div>
 
-            <form onSubmit={handleSubmit(handleLogin)} className="space-y-6">
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSubmit(handleLogin)(e);
+              }} 
+              className="space-y-6"
+            >
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email">E-mail</Label>
