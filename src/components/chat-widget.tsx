@@ -58,6 +58,34 @@ export function ChatWidget() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const continuousModeRef = useRef(continuousMode)
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const warningTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  const clearAllTimers = () => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current)
+  }
+
+  const resetInactivityTimers = () => {
+    clearAllTimers()
+    if (continuousModeRef.current) {
+      // Após 10 segundos de silêncio, avisa que vai encerrar
+      idleTimerRef.current = setTimeout(() => {
+        const warningMsg = "A conversa contínua será encerrada em 10 segundos caso não haja interação."
+        setMessages(prev => [...prev, { role: 'model', content: warningMsg }])
+        speak(warningMsg)
+        
+        // Após mais 10 segundos, desliga o modo contínuo
+        warningTimerRef.current = setTimeout(() => {
+          setContinuousMode(false)
+          setMessages(prev => [...prev, { role: 'model', content: "Modo mãos livres desativado por inatividade." }])
+          speak("Modo mãos livres desativado.")
+        }, 10000)
+      }, 10000)
+    }
+  }
+
   // Setup Speech Recognition
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -76,6 +104,10 @@ export function ChatWidget() {
         }
         setInput(currentTranscript)
         
+        if (continuousModeRef.current) {
+          resetInactivityTimers()
+        }
+        
         // No modo contínuo, envia automaticamente ao detectar fim da frase
         if (isFinal && continuousModeRef.current) {
           recognition.stop()
@@ -90,28 +122,45 @@ export function ChatWidget() {
         console.error('Erro de reconhecimento de voz', event.error)
         setIsListening(false)
         if (continuousModeRef.current && event.error !== 'aborted') {
-          setTimeout(() => recognition.start(), 1000)
+          setTimeout(() => {
+             try { recognition.start() } catch (e) {}
+          }, 1000)
         }
       }
 
       recognition.onend = () => {
         setIsListening(false)
+        // Se ainda está no modo contínuo, não estamos carregando nem falando, religa o microfone
+        if (continuousModeRef.current) {
+          setTimeout(() => {
+             if (continuousModeRef.current && !isListening) {
+                try { recognition.start() } catch (e) {}
+             }
+          }, 300)
+        }
       }
 
       recognitionRef.current = recognition
     }
+    
+    return () => clearAllTimers()
   }, [])
 
-  const continuousModeRef = useRef(continuousMode)
   useEffect(() => {
     continuousModeRef.current = continuousMode
-    if (continuousMode && !isListening) {
-      recognitionRef.current?.start()
-      setIsListening(true)
-      setIsMuted(false) // O modo contínuo precisa da voz ativa para conversar
-    } else if (!continuousMode && isListening) {
-      recognitionRef.current?.stop()
-      setIsListening(false)
+    if (continuousMode) {
+      resetInactivityTimers()
+      if (!isListening) {
+        try { recognitionRef.current?.start() } catch (e) {}
+        setIsListening(true)
+        setIsMuted(false) // O modo contínuo precisa da voz ativa para conversar
+      }
+    } else {
+      clearAllTimers()
+      if (isListening) {
+        recognitionRef.current?.stop()
+        setIsListening(false)
+      }
     }
   }, [continuousMode])
 
