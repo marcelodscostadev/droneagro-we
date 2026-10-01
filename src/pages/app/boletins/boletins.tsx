@@ -19,6 +19,10 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, ArrowDown, ArrowUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { Pagination } from '@/components/ui/pagination'
+
+const PAGE_SIZE = 20
+
 
 const STATUS_MAP: Record<string, { label: string; variant: 'warning' | 'success' | 'destructive' | 'outline' | 'secondary' }> = {
   pending: { label: 'Pendente', variant: 'warning' },
@@ -40,6 +44,7 @@ export function BoletinsPage() {
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [clientFilter, setClientFilter] = useState('')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
+  const [currentPage, setCurrentPage] = useState(1)
   const [openEdit, setOpenEdit] = useState(false)
   const [selectedBoletim, setSelectedBoletim] = useState<any>(null)
   const [selectedRows, setSelectedRows] = useState<string[]>([])
@@ -77,6 +82,7 @@ export function BoletinsPage() {
           expenses:bulletin_expenses(*)
         `)
         .order('created_at', { ascending: false })
+        .limit(500)
       
       if (error) throw error
       return data
@@ -359,6 +365,10 @@ export function BoletinsPage() {
     return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
   })
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginatedBoletins = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+
   const toggleSelectAll = () => {
     if (selectedRows.length === filtered.length) {
       setSelectedRows([])
@@ -469,7 +479,7 @@ export function BoletinsPage() {
                     Nenhum boletim encontrado.
                   </TableCell>
                 </TableRow>
-              ) : filtered.map((b: any) => {
+              ) : paginatedBoletins.map((b: any) => {
                 const isExpanded = expandedRows[b.id]
                 const s = STATUS_MAP[b.status] || STATUS_MAP['pending']
                 const isPending = b.status === 'pending'
@@ -648,6 +658,15 @@ export function BoletinsPage() {
               })}
             </TableBody>
           </Table>
+          <div className="px-4 pb-4">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         </CardContent>
       </Card>
 

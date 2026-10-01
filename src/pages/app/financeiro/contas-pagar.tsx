@@ -1,4 +1,4 @@
-import { Receipt, Plus, CheckCircle, FileText, Download, X, Edit, Trash2 } from 'lucide-react'
+import { Receipt, Plus, CheckCircle, FileText, Download, X, Edit, Trash2, AlertTriangle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,9 +14,15 @@ import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useForm, Controller } from 'react-hook-form'
 import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
+import type { Transaction } from '@/types/entities'
+import { Pagination } from '@/components/ui/pagination'
+
+const PAGE_SIZE = 20
+
 
 export function ContasPagarPage() {
   const [open, setOpen] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [editingTransId, setEditingTransId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -34,15 +40,23 @@ export function ContasPagarPage() {
   const { register, handleSubmit, control, reset, watch } = useForm<any>({ defaultValues: { type: 'expense', status: 'pending' } })
   const formStatus = watch('status')
 
-  const { data: transactions = [] } = useQuery({
-    queryKey: ['transactions_expense'],
+  const { data: transactions = [], isError: isTransError } = useQuery({
+    queryKey: ['transactions_expense', monthFilter],
     queryFn: async () => {
-      const { data, error } = await supabase.from('transactions')
+      let query = supabase.from('transactions')
         .select('*, category:financial_categories(name), cost_center:cost_centers(name)')
         .eq('type', 'expense')
-        // Hide auto commissions from here if they have a specific format, but the user didn't request that exactly. 
-        // We will show all expenses here.
         .order('due_date', { ascending: true })
+
+      // Filtro de mês direto no servidor
+      if (monthFilter) {
+        const [year, month] = monthFilter.split('-')
+        const start = `${year}-${month}-01`
+        const end = new Date(Number(year), Number(month), 0).toISOString().split('T')[0]
+        query = query.gte('due_date', start).lte('due_date', end)
+      }
+
+      const { data, error } = await query.limit(1000)
       if (error) throw error; return data
     }
   })
@@ -182,16 +196,10 @@ export function ContasPagarPage() {
 
   const todayStr = new Date().toLocaleDateString('en-CA')
 
-  const filteredTransactions = transactions.filter((t: any) => {
-    let match = true
-    if (monthFilter) {
-      match = !!(t.due_date && t.due_date.startsWith(monthFilter))
-    }
-    if (match && descFilter) {
-      const desc = t.description || ''
-      match = desc.toLowerCase().includes(descFilter.toLowerCase())
-    }
-    return match
+  // Mês já filtrado no servidor; aqui apenas filtramos por texto de descrição
+  const filteredTransactions = transactions.filter((t: Transaction) => {
+    if (!descFilter) return true
+    return (t.description || '').toLowerCase().includes(descFilter.toLowerCase())
   })
 
   let vencidos = 0
@@ -229,6 +237,12 @@ export function ContasPagarPage() {
     
     return true
   })
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndTabbedTransactions.length / PAGE_SIZE))
+  const paginatedTransactions = filteredAndTabbedTransactions.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  )
 
   function handleGeneratePdf() {
     const data = filteredAndTabbedTransactions.map((t: any) => ({
@@ -385,7 +399,7 @@ export function ContasPagarPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredAndTabbedTransactions.map((t: any) => (
+              {paginatedTransactions.map((t: any) => (
                 <TableRow key={t.id} className={selectedRows.includes(t.id) ? "bg-primary/5 hover:bg-primary/10 transition-colors" : "hover:bg-muted/30 transition-colors"}>
                   <TableCell className="text-center align-middle">
                     <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
@@ -451,6 +465,15 @@ export function ContasPagarPage() {
               ))}
             </TableBody>
           </Table>
+          <div className="px-4 pb-4">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredAndTabbedTransactions.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         </CardContent>
       </Card>
 

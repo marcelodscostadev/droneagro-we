@@ -59,8 +59,8 @@ export function ChatWidget() {
   }, [messages])
 
   const continuousModeRef = useRef(continuousMode)
-  const idleTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const warningTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clearAllTimers = () => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current)

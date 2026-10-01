@@ -1,4 +1,4 @@
-import { TrendingUp, Plus, CheckCircle, FileText, Download, X, Edit, Trash2, ExternalLink, Eye, Receipt, FileCheck, Upload, Loader2 } from 'lucide-react'
+import { TrendingUp, Plus, CheckCircle, FileText, Download, X, Edit, Trash2, ExternalLink, Eye, Receipt, FileCheck, Upload, Loader2, AlertTriangle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,9 +14,15 @@ import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useForm, Controller } from 'react-hook-form'
 import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
+import type { Transaction } from '@/types/entities'
+import { Pagination } from '@/components/ui/pagination'
+
+const PAGE_SIZE = 20
+
 
 export function ContasReceberPage() {
   const [open, setOpen] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [tabFilter, setTabFilter] = useState<'ALL'|'OVERDUE'|'TODAY'|'FUTURE'|'PAID'>('ALL')
@@ -43,13 +49,23 @@ export function ContasReceberPage() {
   const { register, handleSubmit, control, reset, watch } = useForm<any>({ defaultValues: { type: 'income', status: 'pending' } })
   const formStatus = watch('status')
 
-  const { data: transactions = [] } = useQuery({
-    queryKey: ['transactions_income'],
+  const { data: transactions = [], isError: isTransError } = useQuery({
+    queryKey: ['transactions_income', monthFilter],
     queryFn: async () => {
-      const { data, error } = await supabase.from('transactions')
+      let query = supabase.from('transactions')
         .select('*, category:financial_categories(name), cost_center:cost_centers(name), bulletin:measurement_bulletins(invoice_number, invoice_url, boleto_url, service_orders(clients(name)))')
         .eq('type', 'income')
         .order('due_date', { ascending: false })
+
+      // Filtro de mês direto no servidor
+      if (monthFilter) {
+        const [year, month] = monthFilter.split('-')
+        const start = `${year}-${month}-01`
+        const end = new Date(Number(year), Number(month), 0).toISOString().split('T')[0]
+        query = query.gte('due_date', start).lte('due_date', end)
+      }
+
+      const { data, error } = await query.limit(1000)
       if (error) throw error; return data
     }
   })
@@ -208,18 +224,12 @@ export function ContasReceberPage() {
 
   const todayStr = new Date().toLocaleDateString('en-CA')
 
-  const filteredTransactions = transactions.filter((t: any) => {
-    let match = true
-    if (monthFilter) {
-      match = !!(t.due_date && t.due_date.startsWith(monthFilter))
-    }
-    if (match && clientFilter) {
-      const clientName = t.bulletin?.service_orders?.clients?.name || ''
-      const desc = t.description || ''
-      match = clientName.toLowerCase().includes(clientFilter.toLowerCase()) || 
-              desc.toLowerCase().includes(clientFilter.toLowerCase())
-    }
-    return match
+  const filteredTransactions = transactions.filter((t: Transaction) => {
+    if (!clientFilter) return true
+    const clientName = t.bulletin?.service_orders?.clients?.name || ''
+    const desc = t.description || ''
+    return clientName.toLowerCase().includes(clientFilter.toLowerCase()) ||
+           desc.toLowerCase().includes(clientFilter.toLowerCase())
   })
 
   let vencidos = 0
@@ -261,6 +271,12 @@ export function ContasReceberPage() {
   const totalRecebido = pagos
   const totalPendente = vencidos + vencemHoje + aVencer
   const totalGeral = totalPeriodo
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndTabbedTransactions.length / PAGE_SIZE))
+  const paginatedTransactions = filteredAndTabbedTransactions.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  )
 
   const toggleSelectAll = () => {
     if (selectedRows.length === filteredAndTabbedTransactions.length) {
@@ -348,18 +364,19 @@ export function ContasReceberPage() {
           onChange={(e) => {
             setMonthFilter(e.target.value)
             setTabFilter('ALL')
+            setCurrentPage(1)
           }}
           className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         />
         {monthFilter && (
-          <Button variant="ghost" size="sm" onClick={() => setMonthFilter('')} className="text-muted-foreground h-9 px-3">
+          <Button variant="ghost" size="sm" onClick={() => { setMonthFilter(''); setCurrentPage(1) }} className="text-muted-foreground h-9 px-3">
             Histórico Completo
           </Button>
         )}
         <Input 
           placeholder="Buscar cliente..." 
           value={clientFilter}
-          onChange={e => setClientFilter(e.target.value)}
+          onChange={e => { setClientFilter(e.target.value); setCurrentPage(1) }}
           className="w-[200px] h-9 ml-auto"
         />
       </div>
@@ -367,7 +384,7 @@ export function ContasReceberPage() {
       <div className="grid grid-cols-5 gap-4">
         <Card 
           className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'OVERDUE' ? 'border-red-500 ring-1 ring-red-500' : ''}`}
-          onClick={() => setTabFilter(tabFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE')}
+          onClick={() => { setTabFilter(tabFilter === 'OVERDUE' ? 'ALL' : 'OVERDUE'); setCurrentPage(1) }}
         >
           <CardContent className="p-4 text-center">
             <p className="text-sm font-medium text-muted-foreground mb-1">Atrasados</p>
@@ -376,7 +393,7 @@ export function ContasReceberPage() {
         </Card>
         <Card 
           className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'TODAY' ? 'border-orange-500 ring-1 ring-orange-500' : ''}`}
-          onClick={() => setTabFilter(tabFilter === 'TODAY' ? 'ALL' : 'TODAY')}
+          onClick={() => { setTabFilter(tabFilter === 'TODAY' ? 'ALL' : 'TODAY'); setCurrentPage(1) }}
         >
           <CardContent className="p-4 text-center">
             <p className="text-sm font-medium text-muted-foreground mb-1">Vencem Hoje</p>
@@ -385,7 +402,7 @@ export function ContasReceberPage() {
         </Card>
         <Card 
           className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'FUTURE' ? 'border-blue-500 ring-1 ring-blue-500' : ''}`}
-          onClick={() => setTabFilter(tabFilter === 'FUTURE' ? 'ALL' : 'FUTURE')}
+          onClick={() => { setTabFilter(tabFilter === 'FUTURE' ? 'ALL' : 'FUTURE'); setCurrentPage(1) }}
         >
           <CardContent className="p-4 text-center">
             <p className="text-sm font-medium text-muted-foreground mb-1">A Vencer</p>
@@ -394,7 +411,7 @@ export function ContasReceberPage() {
         </Card>
         <Card 
           className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'PAID' ? 'border-emerald-500 ring-1 ring-emerald-500' : ''}`}
-          onClick={() => setTabFilter(tabFilter === 'PAID' ? 'ALL' : 'PAID')}
+          onClick={() => { setTabFilter(tabFilter === 'PAID' ? 'ALL' : 'PAID'); setCurrentPage(1) }}
         >
           <CardContent className="p-4 text-center">
             <p className="text-sm font-medium text-muted-foreground mb-1">Recebidos</p>
@@ -403,7 +420,7 @@ export function ContasReceberPage() {
         </Card>
         <Card 
           className={`cursor-pointer transition-colors hover:bg-muted/50 ${tabFilter === 'ALL' ? 'border-primary ring-1 ring-primary' : ''}`}
-          onClick={() => setTabFilter('ALL')}
+          onClick={() => { setTabFilter('ALL'); setCurrentPage(1) }}
         >
           <CardContent className="p-4 text-center">
             <p className="text-sm font-medium text-muted-foreground mb-1">Total (Período)</p>
@@ -432,7 +449,7 @@ export function ContasReceberPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredAndTabbedTransactions.map((t: any) => (
+              {paginatedTransactions.map((t: any) => (
                 <TableRow key={t.id} className={selectedRows.includes(t.id) ? "bg-primary/5 hover:bg-primary/10 transition-colors" : "hover:bg-muted/30 transition-colors"}>
                   <TableCell className="text-center align-middle">
                     <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
@@ -519,6 +536,15 @@ export function ContasReceberPage() {
               ))}
             </TableBody>
           </Table>
+          <div className="px-4 pb-4">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredAndTabbedTransactions.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         </CardContent>
       </Card>
 

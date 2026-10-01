@@ -15,6 +15,10 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Pagination } from '@/components/ui/pagination'
+
+const PAGE_SIZE = 20
+
 
 const PAYMENT_LABELS: Record<string, string> = { pix: 'PIX', boleto: 'Boleto', dinheiro: 'Dinheiro', outros: 'Outros' }
 
@@ -46,6 +50,7 @@ type ClientFormData = z.infer<typeof clientSchema>
 
 export function ClientesPage() {
   const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
   const [open, setOpen] = useState(false)
   const [editingClient, setEditingClient] = useState<any>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
@@ -58,6 +63,7 @@ export function ClientesPage() {
         .from('clients')
         .select('*')
         .order('name', { ascending: true })
+        .limit(500)
       
       if (error) throw error
       return data
@@ -165,6 +171,9 @@ export function ClientesPage() {
   }
 
   const filtered = clients.filter((c: any) => c.name.toLowerCase().includes(search.toLowerCase()))
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginatedClients = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -304,7 +313,12 @@ export function ClientesPage() {
         <CardHeader className="pb-3">
           <div className="relative max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar cliente..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
+            <Input 
+              placeholder="Buscar cliente..." 
+              value={search} 
+              onChange={e => { setSearch(e.target.value); setCurrentPage(1) }} 
+              className="pl-10" 
+            />
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -334,7 +348,7 @@ export function ClientesPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((c: any) => (
+                paginatedClients.map((c: any) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-semibold">{c.name}</TableCell>
                     <TableCell className="text-muted-foreground">{c.phone || '—'}</TableCell>
@@ -348,6 +362,15 @@ export function ClientesPage() {
               )}
             </TableBody>
           </Table>
+          <div className="px-4 pb-4 mt-4">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setCurrentPage}
+            />
+          </div>
         </CardContent>
       </Card>
     </div>

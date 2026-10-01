@@ -1,4 +1,4 @@
-import { CalendarDays, Plus, Filter, Loader2, RefreshCcw, DollarSign, CheckCircle, CalendarClock, Bell, XCircle, Trash2 } from 'lucide-react'
+import { CalendarDays, Plus, Filter, Loader2, RefreshCcw, DollarSign, CheckCircle, CalendarClock, Bell, XCircle, Trash2, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +17,7 @@ import { z } from 'zod'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { sendClientEmail } from '@/lib/send-email'
+import type { ServiceOrder } from '@/types/entities'
 
 const STATUS_MAP: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'outline' | 'destructive' }> = {
   pending_client: { label: '⏳ Aguard. Aprovação', variant: 'warning' },
@@ -84,34 +85,52 @@ export function AgendamentosPage() {
     }
   })
 
-  const { data: agendamentos = [], isLoading, isFetching } = useQuery({
-    queryKey: ['agendamentos'],
+  const STATUS_ORDER: Record<string, number> = {
+    'pending_client': 1,
+    'scheduled': 2,
+    'rescheduled': 2,
+    'traveling': 3,
+    'in_activity': 3,
+    'in_progress': 3,
+    'finished': 4,
+    'completed': 4,
+    'cancelled': 5
+  }
+
+  const { data: agendamentos = [], isLoading, isFetching, isError: isAgendError } = useQuery({
+    queryKey: ['agendamentos', monthFilter],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('service_orders')
         .select('*, client:clients(name), technician:profiles(name)')
-      
-      if (error) throw error
 
-      const STATUS_ORDER: Record<string, number> = {
-        'pending_client': 1,
-        'scheduled': 2,
-        'rescheduled': 2,
-        'traveling': 3,
-        'in_activity': 3,
-        'in_progress': 3,
-        'finished': 4,
-        'completed': 4,
-        'cancelled': 5
+      // Filtro server-side: se tem mês selecionado, busca pelo intervalo no servidor
+      if (monthFilter) {
+        const [year, month] = monthFilter.split('-')
+        const start = `${year}-${month}-01`
+        const end = new Date(Number(year), Number(month), 0).toISOString().split('T')[0] + 'T23:59:59'
+        query = query.gte('scheduled_at', start).lte('scheduled_at', end)
       }
 
-      return (data || []).sort((a: any, b: any) => {
+      // Buscar pendentes de aprovação sempre, independente do mês (sem filtro de data)
+      const { data: pendingData } = await supabase
+        .from('service_orders')
+        .select('*, client:clients(name), technician:profiles(name)')
+        .eq('status', 'pending_client')
+        .limit(100)
+
+      const { data, error } = await query.limit(500)
+      if (error) throw error
+
+      // Combina resultados: dados do mês + pendentes de aprovação (sem duplicatas)
+      const allIds = new Set((data || []).map((d: ServiceOrder) => d.id))
+      const extras = (pendingData || []).filter((p: ServiceOrder) => !allIds.has(p.id))
+      const combined = [...(data || []), ...extras]
+
+      return combined.sort((a: ServiceOrder, b: ServiceOrder) => {
         const orderA = STATUS_ORDER[a.status] || 99
         const orderB = STATUS_ORDER[b.status] || 99
-        if (orderA !== orderB) {
-          return orderA - orderB
-        }
-        // If same status, sort by date descending (newest first)
+        if (orderA !== orderB) return orderA - orderB
         return new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime()
       })
     }
@@ -530,6 +549,19 @@ export function AgendamentosPage() {
               </form>
             </DialogContent>
           </Dialog>
+      {/* Erro de carregamento */}
+      {isAgendError && (
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+          <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+          <p className="text-sm font-medium text-red-700 dark:text-red-400">
+            Não foi possível carregar os agendamentos. Verifique sua conexão e tente novamente.
+          </p>
+          <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={() => queryClient.invalidateQueries({ queryKey: ['agendamentos'] })}>
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+
       {/* Banner de solicitações pendentes */}
       {agendamentos.filter((ag: any) => ag.status === 'pending_client').length > 0 && (
         <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 animate-in fade-in">
