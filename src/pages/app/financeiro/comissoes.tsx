@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
+import { generateFinancialReport } from '@/lib/pdf-report'
+import { PdfPreviewDialog, usePdfPreview } from '@/components/pdf-preview-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
@@ -17,6 +18,7 @@ import { cn } from '@/lib/utils'
 export function ComissoesPage() {
   const queryClient = useQueryClient()
   const [selectedRows, setSelectedRows] = useState<string[]>([])
+  const pdfPreview = usePdfPreview()
 
   // Retroactive fix for missing categories on commissions
   useEffect(() => {
@@ -242,7 +244,7 @@ export function ComissoesPage() {
       ],
     })
 
-    openPdfInTab(doc)
+    pdfPreview.preview(doc, 'relatorio-comissoes.pdf')
   }
 
   return (
@@ -545,6 +547,8 @@ export function ComissoesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PdfPreviewDialog open={pdfPreview.open} onOpenChange={pdfPreview.setOpen} doc={pdfPreview.doc} fileName={pdfPreview.fileName} />
     </div>
   )
 }

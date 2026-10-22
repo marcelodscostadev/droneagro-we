@@ -1,4 +1,4 @@
-import { FileBarChart, ChevronDown, ChevronUp, FileDown, CheckCircle, XCircle, Plus, Trash2, Edit, Receipt, FileText } from 'lucide-react'
+import { FileBarChart, ChevronDown, ChevronUp, FileDown, CheckCircle, XCircle, Plus, Trash2, Edit, Receipt, FileText, Clock, Layers, Copy } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Fragment, useState } from 'react'
+import { Fragment, useState, useMemo } from 'react'
+import { formatDistanceToNow } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -30,6 +32,26 @@ const STATUS_MAP: Record<string, { label: string; variant: 'warning' | 'success'
   invoiced: { label: 'Faturado', variant: 'outline' },
 }
 
+const STATUS_BORDER: Record<string, string> = {
+  pending: 'border-l-amber-400',
+  approved: 'border-l-blue-500',
+  rejected: 'border-l-red-400',
+  invoiced: 'border-l-emerald-500',
+}
+
+function getInitials(name?: string) {
+  return (name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+}
+
+function getRelativeDay(dateStr?: string) {
+  if (!dateStr) return null
+  try {
+    return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: ptBR })
+  } catch {
+    return null
+  }
+}
+
 const editSchema = z.object({
   hectares_sprayed: z.coerce.number().min(0),
   price_per_ha: z.coerce.number().min(0),
@@ -42,13 +64,16 @@ export function BoletinsPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({})
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [clientFilter, setClientFilter] = useState('')
+  const [monthFilter, setMonthFilter] = useState('')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [openEdit, setOpenEdit] = useState(false)
   const [selectedBoletim, setSelectedBoletim] = useState<any>(null)
   const [selectedRows, setSelectedRows] = useState<string[]>([])
-  
+  const [bulkInvoiceOpen, setBulkInvoiceOpen] = useState(false)
+  const [bulkInvoiceDate, setBulkInvoiceDate] = useState('')
+
   // Expense Form state
   const [expDesc, setExpDesc] = useState('')
   const [expQty, setExpQty] = useState('1')
@@ -132,6 +157,85 @@ export function BoletinsPage() {
       toast.success(`Boletim marcado como ${STATUS_MAP[variables.status].label}!`)
       queryClient.invalidateQueries({ queryKey: ['boletins'] })
     }
+  })
+
+  const bulkApprove = useMutation({
+    mutationFn: async () => {
+      const ids = filtered
+        .filter((b: any) => selectedRows.includes(b.id) && b.status === 'pending')
+        .map((b: any) => b.id)
+      if (ids.length === 0) return
+      const { error } = await supabase.from('measurement_bulletins').update({ status: 'approved' }).in('id', ids)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast.success('Boletins aprovados com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['boletins'] })
+      setSelectedRows([])
+    }
+  })
+
+  const bulkInvoice = useMutation({
+    mutationFn: async () => {
+      const targets = filtered.filter((b: any) => selectedRows.includes(b.id) && b.status === 'approved')
+      if (targets.length === 0) return
+
+      let catId: string | null = null
+      const { data: catData } = await supabase.from('financial_categories').select('id').eq('name', 'Comissões').eq('type', 'expense').single()
+      if (catData) {
+        catId = catData.id
+      } else {
+        const { data: newCat } = await supabase.from('financial_categories').insert({ name: 'Comissões', type: 'expense' }).select('id').single()
+        if (newCat) catId = newCat.id
+      }
+
+      for (const b of targets) {
+        let dueDate = bulkInvoiceDate
+        if (!dueDate) {
+          const d = new Date()
+          d.setDate(d.getDate() + (b.client?.payment_term_days || 0))
+          dueDate = d.toISOString().split('T')[0]
+        }
+
+        const { error: upErr } = await supabase.from('measurement_bulletins').update({ status: 'invoiced' }).eq('id', b.id)
+        if (upErr) throw upErr
+
+        const { error: incErr } = await supabase.from('transactions').insert([{
+          type: 'income',
+          description: `Serviço Prestado - NF S/N - ${b.client?.name}`,
+          amount: b.total_value,
+          due_date: dueDate,
+          status: 'pending',
+          bulletin_id: b.id
+        }])
+        if (incErr) throw incErr
+
+        if (Number(b.commission_value) > 0 && b.technician_id) {
+          const { error: expErr } = await supabase.from('transactions').insert([{
+            type: 'expense',
+            description: `Comissão - Boletim BM-${b.id.substring(0, 4)}`,
+            amount: b.commission_value,
+            due_date: dueDate,
+            status: 'pending',
+            bulletin_id: b.id,
+            technician_id: b.technician_id,
+            category_id: catId
+          }])
+          if (expErr) throw expErr
+        }
+      }
+    },
+    onSuccess: () => {
+      toast.success('Boletins faturados com sucesso!')
+      queryClient.invalidateQueries({ queryKey: ['boletins'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_income'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_expense'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard_stats'] })
+      setBulkInvoiceOpen(false)
+      setSelectedRows([])
+    },
+    onError: (e: any) => toast.error('Erro ao faturar: ' + e.message)
   })
 
   const invoiceBoletim = useMutation({
@@ -358,7 +462,10 @@ export function BoletinsPage() {
   const filtered = boletins.filter((b: any) => {
     const matchStatus = statusFilter === 'ALL' || b.status === statusFilter
     const matchClient = clientFilter === '' || b.client?.name?.toLowerCase().includes(clientFilter.toLowerCase())
-    return matchStatus && matchClient
+    const bDate = new Date(b.service_order?.scheduled_at || b.created_at)
+    const matchMonth = monthFilter === '' ||
+      (bDate.getFullYear() === Number(monthFilter.split('-')[0]) && bDate.getMonth() === Number(monthFilter.split('-')[1]) - 1)
+    return matchStatus && matchClient && matchMonth
   }).sort((a: any, b: any) => {
     const dateA = new Date(a.service_order?.scheduled_at || a.created_at).getTime()
     const dateB = new Date(b.service_order?.scheduled_at || b.created_at).getTime()
@@ -367,6 +474,42 @@ export function BoletinsPage() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const paginatedBoletins = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  const isThisMonth = (b: any) => {
+    const d = new Date(b.service_order?.scheduled_at || b.created_at)
+    const now = new Date()
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+  }
+
+  const kpis = useMemo(() => {
+    let pendCount = 0, pendVal = 0, apprCount = 0, apprVal = 0, invCount = 0, invVal = 0, hectares = 0
+    boletins.forEach((b: any) => {
+      const v = Number(b.total_value) || 0
+      if (b.status === 'pending') { pendCount++; pendVal += v }
+      if (b.status === 'approved') { apprCount++; apprVal += v }
+      if (b.status === 'invoiced' && isThisMonth(b)) { invCount++; invVal += v }
+      if (isThisMonth(b)) hectares += Number(b.hectares_sprayed) || 0
+    })
+    return { pendCount, pendVal, apprCount, apprVal, invCount, invVal, hectares }
+  }, [boletins])
+
+  // Separadores por mês na lista ordenada por data
+  const renderBoletins: Array<{ kind: 'month'; key: string; label: string } | { kind: 'row'; key: string; b: any }> = []
+  const seenMonths = new Set<string>()
+  paginatedBoletins.forEach((b: any) => {
+    const d = new Date(b.service_order?.scheduled_at || b.created_at)
+    const mk = `${d.getFullYear()}-${d.getMonth()}`
+    if (!seenMonths.has(mk)) {
+      seenMonths.add(mk)
+      const label = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+      renderBoletins.push({ kind: 'month', key: `m-${mk}`, label: label.charAt(0).toUpperCase() + label.slice(1) })
+    }
+    renderBoletins.push({ kind: 'row', key: b.id, b })
+  })
+
+  const selectedPending = filtered.filter((b: any) => selectedRows.includes(b.id) && b.status === 'pending')
+  const selectedApproved = filtered.filter((b: any) => selectedRows.includes(b.id) && b.status === 'approved')
+  const selectedApprovedTotal = selectedApproved.reduce((acc: number, b: any) => acc + (Number(b.total_value) || 0), 0)
 
 
   const toggleSelectAll = () => {
@@ -412,8 +555,22 @@ export function BoletinsPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Input 
-            placeholder="Buscar por cliente..." 
+          <div className="flex items-center gap-2">
+            <input
+              type="month"
+              value={monthFilter}
+              onChange={(e) => { setMonthFilter(e.target.value); setCurrentPage(1) }}
+              className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title="Filtrar por mês da OS"
+            />
+            {monthFilter && (
+              <Button variant="ghost" size="sm" onClick={() => setMonthFilter('')} className="text-muted-foreground h-9 px-3">
+                Histórico Completo
+              </Button>
+            )}
+          </div>
+          <Input
+            placeholder="Buscar por cliente..."
             value={clientFilter}
             onChange={e => setClientFilter(e.target.value)}
             className="w-[200px]"
@@ -431,22 +588,72 @@ export function BoletinsPage() {
         </div>
       </div>
 
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card
+          className={cn('cursor-pointer transition-colors hover:bg-muted/50', statusFilter === 'pending' ? 'border-amber-500 ring-1 ring-amber-500' : '')}
+          onClick={() => setStatusFilter(statusFilter === 'pending' ? 'ALL' : 'pending')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1 flex items-center justify-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-amber-500" /> Pendentes
+            </p>
+            <p className="text-2xl font-bold text-amber-500">{kpis.pendCount}</p>
+            <p className="text-xs text-muted-foreground">{formatCurrency(kpis.pendVal)}</p>
+          </CardContent>
+        </Card>
+        <Card
+          className={cn('cursor-pointer transition-colors hover:bg-muted/50', statusFilter === 'approved' ? 'border-blue-500 ring-1 ring-blue-500' : '')}
+          onClick={() => setStatusFilter(statusFilter === 'approved' ? 'ALL' : 'approved')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1 flex items-center justify-center gap-1.5">
+              <CheckCircle className="h-3.5 w-3.5 text-blue-500" /> Aguardando Faturamento
+            </p>
+            <p className="text-2xl font-bold text-blue-500">{kpis.apprCount}</p>
+            <p className="text-xs text-muted-foreground">{formatCurrency(kpis.apprVal)}</p>
+          </CardContent>
+        </Card>
+        <Card
+          className={cn('cursor-pointer transition-colors hover:bg-muted/50', statusFilter === 'invoiced' ? 'border-emerald-500 ring-1 ring-emerald-500' : '')}
+          onClick={() => setStatusFilter(statusFilter === 'invoiced' ? 'ALL' : 'invoiced')}
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1 flex items-center justify-center gap-1.5">
+              <Receipt className="h-3.5 w-3.5 text-emerald-500" /> Faturado no Mês
+            </p>
+            <p className="text-2xl font-bold text-emerald-500">{kpis.invCount}</p>
+            <p className="text-xs text-muted-foreground">{formatCurrency(kpis.invVal)}</p>
+          </CardContent>
+        </Card>
+        <Card
+          className="cursor-pointer transition-colors hover:bg-muted/50"
+          onClick={() => setStatusFilter('ALL')}
+          title="Ver todos os boletins"
+        >
+          <CardContent className="p-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground mb-1 flex items-center justify-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-primary" /> Hectares no Mês
+            </p>
+            <p className="text-2xl font-bold text-primary">{kpis.hectares.toLocaleString('pt-BR')} ha</p>
+            <p className="text-xs text-muted-foreground">Todos os boletins do mês</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="border-muted/50">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[40px] text-center">
-                  <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
+                  <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer"
                     checked={selectedRows.length === filtered.length && filtered.length > 0}
-                    onChange={toggleSelectAll} 
+                    onChange={toggleSelectAll}
                   />
                 </TableHead>
                 <TableHead className="w-[50px]" />
                 <TableHead>Boletim</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead>Técnico</TableHead>
-                <TableHead 
+                <TableHead
                   className="cursor-pointer hover:bg-muted/20 select-none group" 
                   onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
                 >
@@ -469,17 +676,35 @@ export function BoletinsPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="h-24 text-center">
+                  <TableCell colSpan={9} className="h-24 text-center">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
-                    Nenhum boletim encontrado.
+                  <TableCell colSpan={9} className="h-32 text-center">
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <FileBarChart className="h-8 w-8 opacity-40" />
+                      <p className="text-sm">Nenhum boletim encontrado para este filtro.</p>
+                      {(statusFilter !== 'ALL' || clientFilter) && (
+                        <Button variant="outline" size="sm" onClick={() => { setStatusFilter('ALL'); setClientFilter('') }}>
+                          Limpar filtros
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
-              ) : paginatedBoletins.map((b: any) => {
+              ) : renderBoletins.map((item) => {
+                if (item.kind === 'month') {
+                  return (
+                    <TableRow key={item.key} className="bg-muted/30 hover:bg-muted/30">
+                      <TableCell colSpan={9} className="py-1.5">
+                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{item.label}</span>
+                      </TableCell>
+                    </TableRow>
+                  )
+                }
+                const b = item.b
                 const isExpanded = expandedRows[b.id]
                 const s = STATUS_MAP[b.status] || STATUS_MAP['pending']
                 const isPending = b.status === 'pending'
@@ -487,7 +712,7 @@ export function BoletinsPage() {
 
                 return (
                   <Fragment key={b.id}>
-                    <TableRow className={cn('group', isExpanded && 'bg-muted/30', selectedRows.includes(b.id) && 'bg-primary/5 hover:bg-primary/10')}>
+                    <TableRow className={cn('group border-l-4', STATUS_BORDER[b.status] || 'border-l-transparent', isExpanded && 'bg-muted/30', selectedRows.includes(b.id) && 'bg-primary/5 hover:bg-primary/10')}>
                       <TableCell className="text-center">
                         <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
                           checked={selectedRows.includes(b.id)}
@@ -501,15 +726,31 @@ export function BoletinsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="font-bold text-primary" title={b.id}>BM-{b.id.substring(0, 4)}</div>
-                        <div className="text-xs text-muted-foreground">{osNumber}</div>
+                        <div className="font-medium text-sm max-w-[220px] truncate" title={b.client?.name}>{b.client?.name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                          <span>{osNumber}</span>
+                          <span className="text-muted-foreground/40">•</span>
+                          <span className="truncate max-w-[120px]">{b.technician?.name || '—'}</span>
+                        </div>
                       </TableCell>
-                      <TableCell className="font-medium">{b.client?.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{b.technician?.name || '—'}</TableCell>
-                      <TableCell>{b.service_order?.scheduled_at ? formatDate(b.service_order.scheduled_at) : '—'}</TableCell>
+                      <TableCell>
+                        <div className="text-sm font-medium">{b.service_order?.scheduled_at ? formatDate(b.service_order.scheduled_at) : '—'}</div>
+                        {b.service_order?.scheduled_at && (
+                          <div className="text-xs text-muted-foreground">{getRelativeDay(b.service_order.scheduled_at)}</div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-center font-bold">{b.hectares_sprayed || 0} ha</TableCell>
-                      <TableCell className="text-right font-bold text-lg">{formatCurrency(b.total_value)}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">{formatCurrency(b.commission_value)}</TableCell>
-                      <TableCell className="text-center"><Badge variant={s.variant}>{s.label}</Badge></TableCell>
+                      <TableCell className="text-right font-bold">{formatCurrency(b.total_value)}</TableCell>
+                      <TableCell className="text-right text-sm text-muted-foreground">{formatCurrency(b.commission_value)}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={s.variant}>{s.label}</Badge>
+                        {b.status === 'invoiced' && b.invoice_number && (
+                          <div className="text-[10px] text-muted-foreground mt-1">NF {b.invoice_number}</div>
+                        )}
+                        {b.status === 'approved' && (
+                          <div className="text-[10px] text-blue-600 dark:text-blue-400 mt-1">pronto p/ faturar</div>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           {b.status === 'approved' && (
@@ -541,7 +782,33 @@ export function BoletinsPage() {
 
                     {isExpanded && (
                       <TableRow className="bg-muted/20 hover:bg-muted/20">
-                        <TableCell colSpan={11} className="p-4">
+                        <TableCell colSpan={9} className="p-4">
+                          <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="flex items-center gap-3 mb-4">
+                            <div className="h-9 w-9 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-bold shrink-0" title={b.technician?.name}>
+                              {getInitials(b.technician?.name)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-sm">BM-{b.id.substring(0, 4)} — {b.client?.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {osNumber} · {b.technician?.name || '—'} · {b.service_order?.scheduled_at ? formatDate(b.service_order.scheduled_at) : 'sem data'}
+                              </div>
+                            </div>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto shrink-0" title="Copiar ID do boletim"
+                              onClick={() => { navigator.clipboard.writeText(b.id); toast.success('ID do boletim copiado!') }}>
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            {[
+                              `${b.hectares_sprayed || 0} ha`,
+                              `${formatCurrency(b.price_per_ha)}/ha`,
+                              `Subtotal: ${formatCurrency(b.subtotal)}`,
+                              `Comissão: ${b.commission_pct || 0}%`,
+                            ].map((chip) => (
+                              <span key={chip} className="text-xs font-medium bg-card border border-border/60 rounded-full px-3 py-1">{chip}</span>
+                            ))}
+                          </div>
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div className="space-y-4">
                               <h3 className="font-semibold text-sm flex items-center gap-2">
@@ -650,6 +917,7 @@ export function BoletinsPage() {
                               )}
                             </div>
                           </div>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )}
@@ -675,11 +943,25 @@ export function BoletinsPage() {
       </Card>
 
       {selectedRows.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-6 py-3 rounded-full shadow-lg flex items-center gap-4 animate-in slide-in-from-bottom-5 z-50">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-6 py-3 rounded-full shadow-lg flex items-center gap-3 animate-in slide-in-from-bottom-5 z-50">
           <span className="font-medium text-sm">{selectedRows.length} selecionado(s)</span>
           <div className="w-px h-4 bg-primary-foreground/30" />
           <span className="font-bold">Total: {formatCurrency(selectedTotal)}</span>
-          <Button size="sm" variant="secondary" className="ml-2 h-7 px-3 text-xs" onClick={() => setSelectedRows([])}>Limpar</Button>
+          {selectedPending.length > 0 && (
+            <Button size="sm" className="h-7 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" disabled={bulkApprove.isPending}
+              onClick={() => bulkApprove.mutate()}>
+              {bulkApprove.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle className="h-3 w-3 mr-1" />}
+              Aprovar ({selectedPending.length})
+            </Button>
+          )}
+          {selectedApproved.length > 0 && (
+            <Button size="sm" className="h-7 px-3 text-xs bg-white text-primary hover:bg-white/90"
+              onClick={() => { setBulkInvoiceDate(''); setBulkInvoiceOpen(true) }}>
+              <Receipt className="h-3 w-3 mr-1" />
+              Faturar ({selectedApproved.length})
+            </Button>
+          )}
+          <Button size="sm" variant="secondary" className="h-7 px-3 text-xs" onClick={() => setSelectedRows([])}>Limpar</Button>
         </div>
       )}
 
@@ -808,6 +1090,42 @@ export function BoletinsPage() {
             >
               {(invoiceBoletim.isPending || updateFaturamento.isPending) ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Receipt className="h-4 w-4 mr-2" />}
               {boletimToInvoice?.status === 'invoiced' ? 'Atualizar Faturamento' : 'Gerar Faturamento'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Invoice Modal */}
+      <Dialog open={bulkInvoiceOpen} onOpenChange={setBulkInvoiceOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Faturar {selectedApproved.length} boletim(ns)</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="bg-muted/50 p-3 rounded-lg text-sm space-y-1">
+              <p>Total a faturar: <strong>{formatCurrency(selectedApprovedTotal)}</strong></p>
+              <p className="text-xs text-muted-foreground">
+                Cada boletim ficará com status <strong>Faturado</strong> e gerará a receita e a comissão nas transações.
+                O número da NF pode ser informado depois, editando o faturamento de cada boletim.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Data de Vencimento</Label>
+              <Input
+                type="date"
+                value={bulkInvoiceDate}
+                onChange={e => setBulkInvoiceDate(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Opcional. Se ficar vazia, usa o prazo de pagamento cadastrado de cada cliente.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBulkInvoiceOpen(false)}>Cancelar</Button>
+            <Button onClick={() => bulkInvoice.mutate()} disabled={bulkInvoice.isPending}>
+              {bulkInvoice.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Receipt className="h-4 w-4 mr-2" />}
+              Confirmar Faturamento
             </Button>
           </DialogFooter>
         </DialogContent>

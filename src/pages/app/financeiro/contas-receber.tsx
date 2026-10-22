@@ -13,7 +13,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useForm, Controller } from 'react-hook-form'
-import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
+import { generateFinancialReport } from '@/lib/pdf-report'
+import { PdfPreviewDialog, usePdfPreview } from '@/components/pdf-preview-dialog'
 import type { Transaction } from '@/types/entities'
 import { Pagination } from '@/components/ui/pagination'
 
@@ -23,6 +24,7 @@ export function ContasReceberPage() {
   const [open, setOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const pdfPreview = usePdfPreview()
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [tabFilter, setTabFilter] = useState<'ALL'|'OVERDUE'|'TODAY'|'FUTURE'|'PAID'>('ALL')
@@ -329,7 +331,7 @@ export function ContasReceberPage() {
       ],
     })
 
-    openPdfInTab(doc)
+    pdfPreview.preview(doc, 'relatorio-contas-a-receber.pdf')
   }
 
   return (
@@ -831,6 +833,8 @@ export function ContasReceberPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PdfPreviewDialog open={pdfPreview.open} onOpenChange={pdfPreview.setOpen} doc={pdfPreview.doc} fileName={pdfPreview.fileName} />
     </div>
 
   )

@@ -13,7 +13,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useForm, Controller } from 'react-hook-form'
-import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
+import { generateFinancialReport } from '@/lib/pdf-report'
+import { PdfPreviewDialog, usePdfPreview } from '@/components/pdf-preview-dialog'
 import type { Transaction } from '@/types/entities'
 import { Pagination } from '@/components/ui/pagination'
 
@@ -23,6 +24,7 @@ export function ContasPagarPage() {
   const [open, setOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const pdfPreview = usePdfPreview()
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [editingTransId, setEditingTransId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -328,7 +330,7 @@ export function ContasPagarPage() {
       ],
     })
 
-    openPdfInTab(doc)
+    pdfPreview.preview(doc, 'relatorio-contas-a-pagar.pdf')
   }
 
   return (
@@ -682,6 +684,7 @@ export function ContasPagarPage() {
         </DialogContent>
       </Dialog>
 
+      <PdfPreviewDialog open={pdfPreview.open} onOpenChange={pdfPreview.setOpen} doc={pdfPreview.doc} fileName={pdfPreview.fileName} />
     </div>
   )
 }

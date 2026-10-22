@@ -7,7 +7,8 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { Fragment, useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { generateFinancialReport, openPdfInTab, downloadPdf } from '@/lib/pdf-report'
+import { generateFinancialReport } from '@/lib/pdf-report'
+import { PdfPreviewDialog, usePdfPreview } from '@/components/pdf-preview-dialog'
 import { cn } from '@/lib/utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ function CommissionDetailRow({ item }: { item: Tx }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export function FluxoCaixaPage() {
   const today = new Date()
+  const pdfPreview = usePdfPreview()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
@@ -228,7 +230,7 @@ export function FluxoCaixaPage() {
       ],
     })
 
-    openPdfInTab(doc)
+    pdfPreview.preview(doc, 'relatorio-fluxo-de-caixa.pdf')
   }
 
   return (
@@ -400,6 +402,7 @@ export function FluxoCaixaPage() {
         </CardContent>
       </Card>
 
+      <PdfPreviewDialog open={pdfPreview.open} onOpenChange={pdfPreview.setOpen} doc={pdfPreview.doc} fileName={pdfPreview.fileName} />
     </div>
   )
 }
