@@ -23,3 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Chaves SSH / credenciais
+marcelodscostadev
+marcelodscostadev.pub
+*.pem
+*_rsa
+*_ed25519

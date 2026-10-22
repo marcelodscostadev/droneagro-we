@@ -105,7 +105,9 @@ export function ComissoesPage() {
       if (batchFilter) {
         query = query.eq('batch_id', batchFilter)
       } else if (!showAllMonths) {
-        query = query.gte('due_date', startOfMonth).lte('due_date', endOfMonth)
+        query = query.or(
+          `and(status.eq.pending,due_date.gte.${startOfMonth},due_date.lte.${endOfMonth}),and(status.eq.paid,paid_at.gte.${startOfMonth},paid_at.lte.${endOfMonth})`
+        )
       }
 
       const { data, error } = await query.order('due_date', { ascending: false })
@@ -135,6 +137,7 @@ export function ComissoesPage() {
     onSuccess: () => {
       toast.success('Comissão(ões) marcada(s) como paga(s)!')
       queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_expense'] })
       setPayCommissions(null)
       setSelectedRows([])
     }
@@ -150,6 +153,7 @@ export function ComissoesPage() {
     onSuccess: () => {
       toast.success('Pagamento desfeito!')
       queryClient.invalidateQueries({ queryKey: ['transactions_commissions'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions_expense'] })
     }
   })
 

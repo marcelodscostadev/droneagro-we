@@ -17,12 +17,12 @@ import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
 import type { Transaction } from '@/types/entities'
 import { Pagination } from '@/components/ui/pagination'
 
-const PAGE_SIZE = 20
 
 
 export function ContasReceberPage() {
   const [open, setOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
   const [tabFilter, setTabFilter] = useState<'ALL'|'OVERDUE'|'TODAY'|'FUTURE'|'PAID'>('ALL')
@@ -272,10 +272,10 @@ export function ContasReceberPage() {
   const totalPendente = vencidos + vencemHoje + aVencer
   const totalGeral = totalPeriodo
 
-  const totalPages = Math.max(1, Math.ceil(filteredAndTabbedTransactions.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(filteredAndTabbedTransactions.length / pageSize))
   const paginatedTransactions = filteredAndTabbedTransactions.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   )
 
   const toggleSelectAll = () => {
@@ -541,8 +541,12 @@ export function ContasReceberPage() {
               currentPage={currentPage}
               totalPages={totalPages}
               totalItems={filteredAndTabbedTransactions.length}
-              pageSize={PAGE_SIZE}
+              pageSize={pageSize}
               onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setCurrentPage(1)
+              }}
             />
           </div>
         </CardContent>

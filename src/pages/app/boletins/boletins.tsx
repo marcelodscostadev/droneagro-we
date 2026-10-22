@@ -21,7 +21,6 @@ import { Loader2, ArrowDown, ArrowUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Pagination } from '@/components/ui/pagination'
 
-const PAGE_SIZE = 20
 
 
 const STATUS_MAP: Record<string, { label: string; variant: 'warning' | 'success' | 'destructive' | 'outline' | 'secondary' }> = {
@@ -45,6 +44,7 @@ export function BoletinsPage() {
   const [clientFilter, setClientFilter] = useState('')
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [openEdit, setOpenEdit] = useState(false)
   const [selectedBoletim, setSelectedBoletim] = useState<any>(null)
   const [selectedRows, setSelectedRows] = useState<string[]>([])
@@ -365,8 +365,8 @@ export function BoletinsPage() {
     return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
   })
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paginatedBoletins = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const paginatedBoletins = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
 
   const toggleSelectAll = () => {
@@ -663,8 +663,12 @@ export function BoletinsPage() {
               currentPage={currentPage}
               totalPages={totalPages}
               totalItems={filtered.length}
-              pageSize={PAGE_SIZE}
+              pageSize={pageSize}
               onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setCurrentPage(1)
+              }}
             />
           </div>
         </CardContent>

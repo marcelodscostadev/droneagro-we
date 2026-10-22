@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { useState, useMemo } from 'react'
+import { Fragment, useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { generateFinancialReport, openPdfInTab, downloadPdf } from '@/lib/pdf-report'
@@ -316,9 +316,8 @@ export function FluxoCaixaPage() {
 
                 return row.isGroup ? (
                   // ── Linha agrupada de comissões ──
-                  <>
+                  <Fragment key={row.id}>
                     <TableRow
-                      key={row.id}
                       className={cn(
                         'cursor-pointer transition-colors',
                         isExpanded ? 'bg-amber-500/10 hover:bg-amber-500/15' : 'hover:bg-amber-500/5',
@@ -361,7 +360,7 @@ export function FluxoCaixaPage() {
                     {isExpanded && row.items?.map((item) => (
                       <CommissionDetailRow key={item.id} item={item} />
                     ))}
-                  </>
+                  </Fragment>
                 ) : (
                   // ── Linha simples ──
                   <TableRow key={row.id} className="hover:bg-muted/30">

@@ -1,4 +1,4 @@
-import { Receipt, Plus, CheckCircle, FileText, Download, X, Edit, Trash2, AlertTriangle } from 'lucide-react'
+import { Receipt, Plus, CheckCircle, FileText, Download, X, Edit, Trash2, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,12 +17,12 @@ import { generateFinancialReport, openPdfInTab } from '@/lib/pdf-report'
 import type { Transaction } from '@/types/entities'
 import { Pagination } from '@/components/ui/pagination'
 
-const PAGE_SIZE = 20
 
 
 export function ContasPagarPage() {
   const [open, setOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [editingTransId, setEditingTransId] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -30,6 +30,18 @@ export function ContasPagarPage() {
   
   const [markPaidOpen, setMarkPaidOpen] = useState(false)
   const [transToMarkPaid, setTransToMarkPaid] = useState<any>(null)
+
+  // Grupos de baixa de comissão por data: colapsados por padrão (valores ocultos)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+
+  const toggleGroup = (dateKey: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(dateKey)) next.delete(dateKey)
+      else next.add(dateKey)
+      return next
+    })
+  }
   
   const today = new Date()
   const [monthFilter, setMonthFilter] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
@@ -44,20 +56,27 @@ export function ContasPagarPage() {
     queryKey: ['transactions_expense', monthFilter],
     queryFn: async () => {
       let query = supabase.from('transactions')
-        .select('*, category:financial_categories(name), cost_center:cost_centers(name)')
+        .select('*, category:financial_categories(name), cost_center:cost_centers(name), technician_id, technician:profiles(name)')
         .eq('type', 'expense')
         .order('due_date', { ascending: true })
 
-      // Filtro de mês direto no servidor
+      // Pendentes no mês do vencimento; pagas no mês da baixa (caixa)
       if (monthFilter) {
         const [year, month] = monthFilter.split('-')
         const start = `${year}-${month}-01`
         const end = new Date(Number(year), Number(month), 0).toISOString().split('T')[0]
-        query = query.gte('due_date', start).lte('due_date', end)
+        query = query.or(
+          `and(status.eq.pending,due_date.gte.${start},due_date.lte.${end}),and(status.eq.paid,paid_at.gte.${start},paid_at.lte.${end}T23:59:59)`
+        )
       }
 
       const { data, error } = await query.limit(1000)
-      if (error) throw error; return data
+      if (error) throw error
+      return (data || []).sort((a: Transaction, b: Transaction) => {
+        const da = a.status === 'paid' ? (a.paid_at || a.due_date || '') : (a.due_date || '')
+        const db = b.status === 'paid' ? (b.paid_at || b.due_date || '') : (b.due_date || '')
+        return da.localeCompare(db)
+      })
     }
   })
 
@@ -238,11 +257,39 @@ export function ContasPagarPage() {
     return true
   })
 
-  const totalPages = Math.max(1, Math.ceil(filteredAndTabbedTransactions.length / PAGE_SIZE))
+  const totalPages = Math.max(1, Math.ceil(filteredAndTabbedTransactions.length / pageSize))
   const paginatedTransactions = filteredAndTabbedTransactions.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
   )
+
+  // Baixas de comissão (transações com técnico, já pagas) agrupadas por data da baixa
+  const commissionGroups = new Map<string, { count: number; total: number }>()
+  filteredAndTabbedTransactions.forEach((t: any) => {
+    if (t.technician_id && t.status === 'paid' && t.paid_at) {
+      const key = t.paid_at.slice(0, 10)
+      const g = commissionGroups.get(key) || { count: 0, total: 0 }
+      g.count += 1
+      g.total += Number(t.amount) || 0
+      commissionGroups.set(key, g)
+    }
+  })
+
+  const renderItems: Array<{ kind: 'group'; key: string; dateKey: string; count: number; total: number } | { kind: 'row'; key: string; t: any }> = []
+  const seenGroupDates = new Set<string>()
+  paginatedTransactions.forEach((t: any) => {
+    if (t.technician_id && t.status === 'paid' && t.paid_at) {
+      const dateKey = t.paid_at.slice(0, 10)
+      if (!seenGroupDates.has(dateKey)) {
+        seenGroupDates.add(dateKey)
+        const g = commissionGroups.get(dateKey)!
+        renderItems.push({ kind: 'group', key: `group-${dateKey}`, dateKey, count: g.count, total: g.total })
+      }
+      // Grupo recolhido: esconde as linhas de comissão daquele dia
+      if (!expandedGroups.has(dateKey)) return
+    }
+    renderItems.push({ kind: 'row', key: t.id, t })
+  })
 
   function handleGeneratePdf() {
     const data = filteredAndTabbedTransactions.map((t: any) => ({
@@ -399,7 +446,32 @@ export function ContasPagarPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedTransactions.map((t: any) => (
+              {renderItems.map((item) => {
+                if (item.kind === 'group') {
+                  const isExpanded = expandedGroups.has(item.dateKey)
+                  return (
+                    <TableRow
+                      key={item.key}
+                      className="bg-muted/40 hover:bg-muted/60 cursor-pointer select-none"
+                      onClick={() => toggleGroup(item.dateKey)}
+                      title={isExpanded ? 'Clique para recolher' : 'Clique para ver as comissões'}
+                    >
+                      <TableCell colSpan={6} className="py-2.5">
+                        <div className="flex items-center gap-2 text-sm">
+                          {isExpanded
+                            ? <ChevronDown className="h-4 w-4 text-emerald-600 shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-emerald-600 shrink-0" />}
+                          <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                          <span className="font-semibold text-foreground">Baixa de Comissões — {formatDate(item.dateKey)}</span>
+                          <span className="text-xs text-muted-foreground">{item.count} comissão(ões)</span>
+                          <span className="ml-auto font-bold text-emerald-600">{formatCurrency(item.total)}</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                }
+                const t = item.t
+                return (
                 <TableRow key={t.id} className={selectedRows.includes(t.id) ? "bg-primary/5 hover:bg-primary/10 transition-colors" : "hover:bg-muted/30 transition-colors"}>
                   <TableCell className="text-center align-middle">
                     <input type="checkbox" className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer" 
@@ -418,6 +490,12 @@ export function ContasPagarPage() {
                         <>
                           <span className="text-muted-foreground/30">•</span>
                           <span>{t.cost_center.name}</span>
+                        </>
+                      )}
+                      {t.technician?.name && (
+                        <>
+                          <span className="text-muted-foreground/30">•</span>
+                          <span className="text-emerald-600">Téc: {t.technician.name}</span>
                         </>
                       )}
                     </div>
@@ -462,7 +540,8 @@ export function ContasPagarPage() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
           <div className="px-4 pb-4">
@@ -470,8 +549,12 @@ export function ContasPagarPage() {
               currentPage={currentPage}
               totalPages={totalPages}
               totalItems={filteredAndTabbedTransactions.length}
-              pageSize={PAGE_SIZE}
+              pageSize={pageSize}
               onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setCurrentPage(1)
+              }}
             />
           </div>
         </CardContent>

@@ -52,7 +52,7 @@ export function PropostasPage() {
   const { data: clients } = useQuery({
     queryKey: ['clients'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('clients').select('id, name, document_number, phone, address').order('name')
+      const { data, error } = await supabase.from('clients').select('id, name, document_number, phone, address').order('name').limit(500)
       if (error) throw error
       return data || []
     }
@@ -65,6 +65,7 @@ export function PropostasPage() {
         .from('commercial_proposals')
         .select('*, client:clients(name, document_number, address)')
         .order('created_at', { ascending: false })
+        .limit(500)
       if (error) {
         if (error.code === '42P01') {
           // Table doesn't exist yet

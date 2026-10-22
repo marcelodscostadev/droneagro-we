@@ -17,7 +17,6 @@ import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Pagination } from '@/components/ui/pagination'
 
-const PAGE_SIZE = 20
 
 
 const PAYMENT_LABELS: Record<string, string> = { pix: 'PIX', boleto: 'Boleto', dinheiro: 'Dinheiro', outros: 'Outros' }
@@ -51,6 +50,7 @@ type ClientFormData = z.infer<typeof clientSchema>
 export function ClientesPage() {
   const [search, setSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [open, setOpen] = useState(false)
   const [editingClient, setEditingClient] = useState<any>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
@@ -172,8 +172,8 @@ export function ClientesPage() {
 
   const filtered = clients.filter((c: any) => c.name.toLowerCase().includes(search.toLowerCase()))
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paginatedClients = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const paginatedClients = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -367,8 +367,12 @@ export function ClientesPage() {
               currentPage={currentPage}
               totalPages={totalPages}
               totalItems={filtered.length}
-              pageSize={PAGE_SIZE}
+              pageSize={pageSize}
               onPageChange={setCurrentPage}
+              onPageSizeChange={(size) => {
+                setPageSize(size)
+                setCurrentPage(1)
+              }}
             />
           </div>
         </CardContent>

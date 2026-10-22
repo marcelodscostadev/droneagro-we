@@ -30,13 +30,6 @@ export function SignIn() {
   async function handleSignIn(data: SignInFormData) {
     setIsLoading(true)
     try {
-      if (data.email === 'admin@droneagro.com' && data.password === '123456') {
-        localStorage.setItem('@droneagro:user', JSON.stringify({ id: '1', name: 'Administrador', role: 'admin', email: 'admin@droneagro.com' }))
-        queryClient.invalidateQueries({ queryKey: ['auth-user'] })
-        navigate('/')
-        return
-      }
-
       const { error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,

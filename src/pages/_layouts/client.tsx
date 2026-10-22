@@ -26,7 +26,6 @@ export function ClientLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   async function handleLogout() {
-    localStorage.removeItem('@droneagro:user')
     await supabase.auth.signOut()
     queryClient.clear()
     navigate('/cliente/login')

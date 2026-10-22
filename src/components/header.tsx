@@ -84,7 +84,6 @@ export function Header() {
   const location = useLocation()
 
   async function handleLogout() {
-    localStorage.removeItem('@droneagro:user')
     await supabase.auth.signOut()
     queryClient.clear()
     navigate('/auth/sign-in')
