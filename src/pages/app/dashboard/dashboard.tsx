@@ -1,4 +1,4 @@
-import { Cpu, CalendarDays, CheckCircle, Clock, TrendingUp, FileBarChart, Sprout, Gauge, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Cpu, CalendarDays, CheckCircle, Clock, TrendingUp, FileBarChart, Sprout, Gauge, Loader2, ChevronLeft, ChevronRight, Users, Wallet, Scale, PiggyBank, Banknote } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { Navigate } from 'react-router-dom'
@@ -22,6 +22,7 @@ export function Dashboard() {
   const { data: user, isLoading: isAuthLoading, isError } = useAuth()
   const [agendaDate, setAgendaDate] = useState(new Date())
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date(agendaDate.getFullYear(), agendaDate.getMonth(), 1))
+  const [showCalendar, setShowCalendar] = useState(false)
 
   const handleSetAgendaDate = (d: Date) => {
     setAgendaDate(d)
@@ -150,6 +151,77 @@ export function Dashboard() {
         .gte('created_at', startOfMonth)
       const hectaresMes = boletinsMes?.reduce((acc, curr) => acc + Number(curr.hectares_sprayed), 0) || 0
 
+      // 7. Financeiro do Mês (por data de vencimento) + Despesas por tipo
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const startOfMonthStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
+      const lastDayMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+      const endOfMonthStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(lastDayMonth)}`
+      const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+
+      const { data: transMes = [] } = await supabase
+        .from('transactions')
+        .select('type, amount, status, due_date, description, category:financial_categories(name), bulletin:measurement_bulletins(service_orders(clients(name)))')
+        .gte('due_date', startOfMonthStr)
+        .lte('due_date', endOfMonthStr)
+
+      let prevReceitaMes = 0, prevDespesaMes = 0, recebidoMes = 0, pagoMes = 0
+      const despPorTipoMap = new Map<string, { total: number; items: { desc: string; date: string; value: number; paid: boolean }[] }>()
+      ;(transMes as any[]).forEach((t) => {
+        const v = Number(t.amount) || 0
+        if (t.type === 'income') {
+          if (t.status === 'paid') recebidoMes += v
+          else prevReceitaMes += v
+        } else {
+          if (t.status === 'paid') pagoMes += v
+          else prevDespesaMes += v
+          const cat = t.category?.name || 'Sem categoria'
+          const g = despPorTipoMap.get(cat) || { total: 0, items: [] }
+          g.total += v
+          g.items.push({ desc: t.description, date: t.due_date, value: v, paid: t.status === 'paid' })
+          despPorTipoMap.set(cat, g)
+        }
+      })
+      const despesasPorTipo = [...despPorTipoMap.entries()]
+        .map(([name, g]) => ({ name, total: g.total, items: g.items.sort((a, b) => b.value - a.value) }))
+        .sort((a, b) => b.total - a.total)
+
+      const receitaTotalMes = recebidoMes + prevReceitaMes
+      const despesaTotalMes = pagoMes + prevDespesaMes
+      const saldoProjetadoMes = receitaTotalMes - despesaTotalMes
+      const pontoEquilibrioPct = despesaTotalMes > 0 ? Math.min((receitaTotalMes / despesaTotalMes) * 100, 999) : 0
+
+      // 8. Atrasos (receitas vencidas) + clientes em atraso
+      const { data: atrasadas = [] } = await supabase
+        .from('transactions')
+        .select('amount, description, due_date, bulletin:measurement_bulletins(service_orders(clients(name)))')
+        .eq('type', 'income')
+        .eq('status', 'pending')
+        .lt('due_date', todayStr)
+
+      const totalAtrasado = (atrasadas as any[]).reduce((acc, t) => acc + (Number(t.amount) || 0), 0)
+      const clientesAtrasoSet = new Set<string>()
+      ;(atrasadas as any[]).forEach((t) => {
+        const name = t.bulletin?.service_orders?.clients?.name
+        if (name) clientesAtrasoSet.add(name)
+      })
+      const faturasAtraso = (atrasadas as any[])
+        .map((t) => ({
+          desc: t.bulletin?.service_orders?.clients?.name || t.description,
+          date: t.due_date,
+          value: Number(t.amount) || 0
+        }))
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+
+      // 9. Saldo de caixa atual (tudo que entrou - tudo que saiu)
+      const { data: saldos = [] } = await supabase
+        .from('transactions')
+        .select('type, amount')
+        .eq('status', 'paid')
+      const saldoCaixaAtual = (saldos as any[]).reduce(
+        (acc, t) => acc + (t.type === 'income' ? Number(t.amount) || 0 : -(Number(t.amount) || 0)),
+        0
+      )
+
       return {
         ultimosAgendamentos,
         ultimasOs,
@@ -163,7 +235,19 @@ export function Dashboard() {
         comissoesPendentes,
         osConcluidasMes,
         demosMes,
-        clientesAtendidosMes
+        clientesAtendidosMes,
+        prevReceitaMes,
+        prevDespesaMes,
+        recebidoMes,
+        pagoMes,
+        saldoProjetadoMes,
+        pontoEquilibrioPct,
+        despesasPorTipo,
+        totalAtrasado,
+        faturasAtrasadas: (atrasadas as any[]).length,
+        clientesEmAtraso: clientesAtrasoSet.size,
+        faturasAtraso,
+        saldoCaixaAtual
       }
     },
     refetchInterval: 60000, // Refetch every minute to keep dashboard live
@@ -193,7 +277,19 @@ export function Dashboard() {
     comissoesPendentes: 0,
     osConcluidasMes: 0,
     demosMes: 0,
-    clientesAtendidosMes: 0
+    clientesAtendidosMes: 0,
+    prevReceitaMes: 0,
+    prevDespesaMes: 0,
+    recebidoMes: 0,
+    pagoMes: 0,
+    saldoProjetadoMes: 0,
+    pontoEquilibrioPct: 0,
+    despesasPorTipo: [] as { name: string; total: number; items: { desc: string; date: string; value: number; paid: boolean }[] }[],
+    totalAtrasado: 0,
+    faturasAtrasadas: 0,
+    clientesEmAtraso: 0,
+    faturasAtraso: [] as { desc: string; date: string; value: number }[],
+    saldoCaixaAtual: 0
   }
 
   return (
@@ -254,17 +350,141 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-muted/50 bg-gradient-to-b from-card to-card/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default group">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+        <Card className="relative border-red-500/20 bg-red-500/5 group/atraso">
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
-            <CardTitle className="text-sm font-medium text-muted-foreground group-hover:text-emerald-600 transition-colors">A Receber Pendente</CardTitle>
-            <div className="p-2 bg-emerald-500/10 rounded-xl group-hover:scale-110 group-hover:bg-emerald-500/20 transition-all duration-300">
-              <TrendingUp className="h-4 w-4 text-emerald-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground group-hover:text-red-600 transition-colors">Clientes em Atraso</CardTitle>
+            <div className="p-2 bg-red-500/10 rounded-xl group-hover:scale-110 transition-all duration-300">
+              <Users className="h-4 w-4 text-red-600" />
             </div>
           </CardHeader>
           <CardContent className="relative z-10">
-            <p className="text-3xl font-bold tracking-tight text-emerald-600">{formatCurrency(data.aReceberMes)}</p>
-            <p className="text-xs text-muted-foreground mt-1">em aberto (todas as contas)</p>
+            <p className="text-3xl font-bold tracking-tight text-red-600">{data.clientesEmAtraso}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {formatCurrency(data.totalAtrasado)} em {data.faturasAtrasadas} fatura(s) vencida(s)
+            </p>
+
+            {/* Tooltip com as faturas em atraso */}
+            {data.faturasAtraso.length > 0 && (
+              <div className="hidden group-hover/atraso:block absolute right-0 top-full mt-1 z-50 w-80 rounded-lg border border-border bg-popover text-popover-foreground shadow-xl p-3">
+                <p className="text-xs font-semibold mb-2">
+                  Faturas em atraso · {formatCurrency(data.totalAtrasado)}
+                </p>
+                <div className="max-h-56 overflow-y-auto space-y-1.5">
+                  {data.faturasAtraso.map((f, idx) => {
+                    const dias = f.date ? Math.floor((Date.now() - new Date(`${f.date}T00:00:00`).getTime()) / 86400000) : 0
+                    return (
+                      <div key={idx} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate text-muted-foreground">
+                          <span className="text-red-600 font-medium">{dias}d</span>
+                          {' · '}{f.date ? new Date(`${f.date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}
+                          {' · '}{f.desc}
+                        </span>
+                        <span className="whitespace-nowrap font-medium text-foreground">{formatCurrency(f.value)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Financeiro do Mês - Consolidado */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
+        <Card className="xl:col-span-2 border-muted/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base capitalize">
+              <Scale className="h-4 w-4 text-primary" />
+              Financeiro · {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-x-4 gap-y-5">
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Banknote className="h-3.5 w-3.5" /> Saldo em Caixa</p>
+                <p className={`text-xl font-bold tracking-tight ${data.saldoCaixaAtual >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(data.saldoCaixaAtual)}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">entradas − saídas realizadas</p>
+              </div>
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><TrendingUp className="h-3.5 w-3.5 text-emerald-600" /> Receita do Mês</p>
+                <p className="text-xl font-bold tracking-tight text-emerald-600">{formatCurrency(data.recebidoMes + data.prevReceitaMes)}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Recebido: {formatCurrency(data.recebidoMes)}<br />A receber: {formatCurrency(data.prevReceitaMes)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Wallet className="h-3.5 w-3.5 text-red-600" /> Despesa do Mês</p>
+                <p className="text-xl font-bold tracking-tight text-red-600">{formatCurrency(data.pagoMes + data.prevDespesaMes)}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Pago: {formatCurrency(data.pagoMes)}<br />A pagar: {formatCurrency(data.prevDespesaMes)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><PiggyBank className="h-3.5 w-3.5" /> Saldo Projetado</p>
+                <p className={`text-xl font-bold tracking-tight ${data.saldoProjetadoMes >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(data.saldoProjetadoMes)}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">fim do mês · receitas − despesas</p>
+              </div>
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Scale className="h-3.5 w-3.5" /> Ponto de Equilíbrio</p>
+                <p className="text-xl font-bold tracking-tight text-foreground">{formatCurrency(data.pagoMes + data.prevDespesaMes)}</p>
+                <p className={`text-[11px] font-medium leading-snug ${data.pontoEquilibrioPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {data.pontoEquilibrioPct >= 100
+                    ? 'atingido ✓'
+                    : `faltam ${formatCurrency((data.pagoMes + data.prevDespesaMes) - (data.recebidoMes + data.prevReceitaMes))}`}
+                </p>
+              </div>
+            </div>
+
+          </CardContent>
+        </Card>
+
+        <Card className="border-muted/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wallet className="h-4 w-4 text-primary" />
+              Despesas por Tipo
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.despesasPorTipo.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Nenhuma despesa lançada neste mês.</p>
+            ) : (
+              (() => {
+                const maxTotal = data.despesasPorTipo[0]?.total || 1
+                const CORES = ['bg-primary', 'bg-amber-500', 'bg-red-500', 'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500']
+                return data.despesasPorTipo.slice(0, 8).map((d, i) => (
+                  <div key={d.name} className="relative space-y-1 group/row">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium truncate max-w-[70%] cursor-default" title={d.name}>{d.name}</span>
+                      <span className="font-semibold">{formatCurrency(d.total)}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${CORES[i % CORES.length]}`}
+                        style={{ width: `${Math.max((d.total / maxTotal) * 100, 2)}%` }}
+                      />
+                    </div>
+
+                    {/* Tooltip com os lançamentos da categoria */}
+                    <div className="hidden group-hover/row:block absolute right-0 top-7 z-30 w-80 rounded-lg border border-border bg-popover text-popover-foreground shadow-xl p-3">
+                      <p className="text-xs font-semibold mb-2">
+                        {d.name} · {formatCurrency(d.total)}
+                      </p>
+                      <div className="max-h-52 overflow-y-auto space-y-1.5">
+                        {d.items.map((it, idx) => (
+                          <div key={idx} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="truncate text-muted-foreground">
+                              <span className="text-foreground/70">{it.date ? new Date(`${it.date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}</span>
+                              {' · '}{it.desc}
+                            </span>
+                            <span className={`whitespace-nowrap font-medium ${it.paid ? 'text-muted-foreground' : 'text-amber-600'}`}>
+                              {formatCurrency(it.value)}{!it.paid && ' (a pagar)'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              })()
+            )}
           </CardContent>
         </Card>
       </div>
@@ -313,6 +533,16 @@ export function Dashboard() {
                 <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => handleSetAgendaDate(new Date())}>
                   Hoje
                 </Button>
+                <Button
+                  variant={showCalendar ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setShowCalendar(s => !s)}
+                  title={showCalendar ? 'Ocultar calendário' : 'Mostrar calendário'}
+                >
+                  <CalendarDays className="h-4 w-4 mr-1" />
+                  Calendário
+                </Button>
               </div>
             </div>
           </CardHeader>
@@ -350,6 +580,7 @@ export function Dashboard() {
 
         {/* Quick stats panel */}
         <div className="space-y-4">
+          {showCalendar && (
           <Card className="border-muted/50 shadow-sm">
             <CardHeader className="pb-2 pt-4 flex flex-row items-center justify-between">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
@@ -402,6 +633,7 @@ export function Dashboard() {
               </div>
             </CardContent>
           </Card>
+          )}
 
           <Card className="border-muted/50">
             <CardHeader className="pb-3">
@@ -415,6 +647,7 @@ export function Dashboard() {
                 { label: 'OS Concluídas', value: data.osConcluidasMes, icon: CheckCircle, color: 'text-primary' },
                 { label: 'Demonstrações', value: data.demosMes, icon: Clock, color: 'text-muted-foreground' },
                 { label: 'Clientes Atendidos', value: data.clientesAtendidosMes, icon: CalendarDays, color: 'text-primary' },
+                { label: 'Comissões Pendentes', value: formatCurrency(data.comissoesPendentes), icon: Wallet, color: 'text-amber-600' },
               ].map((item) => (
                 <div key={item.label} className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/30">
                   <div className="flex items-center gap-3">
@@ -424,21 +657,6 @@ export function Dashboard() {
                   <span className={`text-lg font-bold ${item.color}`}>{item.value}</span>
                 </div>
               ))}
-            </CardContent>
-          </Card>
-
-          <Card className="border-amber-500/20 bg-amber-500/5">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
-                <FileBarChart className="h-4 w-4" />
-                Boletins Aguardando Aprovação
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold text-amber-600">{data.boletinsPendentes}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Comissões pendentes: {formatCurrency(data.comissoesPendentes)}
-              </p>
             </CardContent>
           </Card>
         </div>
