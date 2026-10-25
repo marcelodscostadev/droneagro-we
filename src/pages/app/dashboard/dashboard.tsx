@@ -1,14 +1,55 @@
-import { Cpu, CalendarDays, CheckCircle, Clock, TrendingUp, FileBarChart, Sprout, Gauge, Loader2, ChevronLeft, ChevronRight, Users, Wallet, Scale, PiggyBank, Banknote } from 'lucide-react'
+import { Cpu, CalendarDays, CheckCircle, Clock, TrendingUp, FileBarChart, Sprout, Gauge, Loader2, ChevronLeft, ChevronRight, Users, Wallet, Scale, PiggyBank, Banknote, CalendarRange, TrendingDown, ArrowUp, ArrowUpRight, ArrowDown, ArrowDownRight, Droplets, Coins, Receipt } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
 import { Navigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
-import { formatCurrency } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { monthCashFilter, fetchAllRows } from '@/lib/finance'
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const MONTH_ABBR = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+
+interface PeriodMonth {
+  key: string
+  label: string
+  year: number
+  month: number
+  hectares: number
+  faturamento: number
+  despesa: number
+  resultado: number
+  entradas: number
+  saidas: number
+  saldoCaixa: number
+}
+
+/** Gera a lista de meses (chave + rótulo) entre dois meses "AAAA-MM" (inclusive). */
+function buildMonths(startKey: string, endKey: string) {
+  const [sy, sm] = startKey.split('-').map(Number)
+  const [ey, em] = endKey.split('-').map(Number)
+  if (!sy || !sm || !ey || !em) return []
+  const out: { key: string; label: string; year: number; month: number }[] = []
+  let cur = new Date(sy, sm - 1, 1)
+  const last = new Date(ey, em - 1, 1)
+  while (cur <= last && out.length < 36) {
+    out.push({
+      key: `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}`,
+      label: `${MONTH_ABBR[cur.getMonth()]}/${String(cur.getFullYear()).slice(2)}`,
+      year: cur.getFullYear(),
+      month: cur.getMonth() + 1,
+    })
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
+  }
+  return out
+}
+
+const formatHa = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })
 
 const STATUS_CONFIG: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'outline' }> = {
   'finished': { label: 'Concluído', variant: 'success' },
@@ -24,6 +65,25 @@ export function Dashboard() {
   const [agendaDate, setAgendaDate] = useState(new Date())
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date(agendaDate.getFullYear(), agendaDate.getMonth(), 1))
   const [showCalendar, setShowCalendar] = useState(false)
+
+  // ── Filtro de período da análise (padrão: últimos 12 meses) ──────────────────
+  const nowRef = new Date()
+  const [periodStart, setPeriodStart] = useState(() => {
+    const d = new Date(nowRef.getFullYear(), nowRef.getMonth() - 11, 1)
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
+  })
+  const [periodEnd, setPeriodEnd] = useState(`${nowRef.getFullYear()}-${pad2(nowRef.getMonth() + 1)}`)
+
+  const applyPreset = (preset: number | 'ytd') => {
+    const n = new Date()
+    if (preset === 'ytd') {
+      setPeriodStart(`${n.getFullYear()}-01`)
+    } else {
+      const d = new Date(n.getFullYear(), n.getMonth() - (preset - 1), 1)
+      setPeriodStart(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}`)
+    }
+    setPeriodEnd(`${n.getFullYear()}-${pad2(n.getMonth() + 1)}`)
+  }
 
   const handleSetAgendaDate = (d: Date) => {
     setAgendaDate(d)
@@ -260,6 +320,169 @@ export function Dashboard() {
     placeholderData: keepPreviousData
   })
 
+  // ── Análise por período (hectares/cliente, faturamento, despesa, saldo de caixa) ──
+  const { data: periodStats, isLoading: isPeriodLoading } = useQuery({
+    queryKey: ['dashboard_period_stats', periodStart, periodEnd],
+    queryFn: async () => {
+      const months = buildMonths(periodStart, periodEnd)
+      if (months.length === 0) return null
+
+      const first = months[0]
+      const last = months[months.length - 1]
+      const firstDayStr = `${first.key}-01`
+      const lastDayNum = new Date(last.year, last.month, 0).getDate()
+      const lastDayStr = `${last.key}-${pad2(lastDayNum)}`
+
+      const periodStartTs = new Date(first.year, first.month - 1, 1).toISOString()
+      const periodEndTs = new Date(last.year, last.month, 1).toISOString()
+      const periodStartMs = Date.parse(periodStartTs)
+      const periodEndMs = Date.parse(periodEndTs)
+
+      // Período anterior de mesma duração (imediatamente antes)
+      const n = months.length
+      const prevFirst = new Date(first.year, first.month - 1 - n, 1)
+      const prevLast = new Date(first.year, first.month - 2, 1)
+      const prevStartTs = new Date(prevFirst.getFullYear(), prevFirst.getMonth(), 1).toISOString()
+      const prevStartMs = Date.parse(prevStartTs)
+
+      // 1. Saldo inicial + caixa acumulado antes do período
+      const { data: settings } = await supabase.from('company_settings').select('initial_balance').eq('id', 1).single()
+      const saldoInicial = Number(settings?.initial_balance || 0)
+      const priorPaid = await fetchAllRows<{ type: string; amount: number }>(() => supabase
+        .from('transactions').select('type, amount').eq('status', 'paid').lt('paid_at', periodStartTs).order('id'))
+      const caixaAnterior = priorPaid.reduce(
+        (acc, t) => acc + (t.type === 'income' ? Number(t.amount) || 0 : -(Number(t.amount) || 0)),
+        0
+      )
+
+      // 2. Transações do período — usadas para despesas (competência) e entradas/saídas efetivas (caixa).
+      // O Faturamento NÃO vem daqui: é atribuído ao mês do serviço pelos boletins (item 3),
+      // pois a nota pode agrupar serviços de meses diferentes e vencer em outro mês.
+      const tx = await fetchAllRows<any>(() => supabase
+        .from('transactions')
+        .select('type, amount, status, due_date, paid_at')
+        .or(
+          `and(status.eq.pending,due_date.gte.${firstDayStr},due_date.lte.${lastDayStr}),` +
+          `and(status.eq.paid,paid_at.gte."${periodStartTs}",paid_at.lt."${periodEndTs}")`
+        )
+        .order('id'))
+
+      const monthMap = new Map<string, PeriodMonth>()
+      months.forEach((m) => monthMap.set(m.key, { ...m, hectares: 0, faturamento: 0, despesa: 0, resultado: 0, entradas: 0, saidas: 0, saldoCaixa: 0 }))
+
+      tx.forEach((t: any) => {
+        const v = Number(t.amount) || 0
+        let key: string | null = null
+        if (t.status === 'paid' && t.paid_at) {
+          const d = new Date(t.paid_at)
+          key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
+        } else if (t.due_date) {
+          key = String(t.due_date).slice(0, 7)
+        }
+        const m = key ? monthMap.get(key) : undefined
+        if (!m) return
+        if (t.type === 'income') {
+          if (t.status === 'paid') m.entradas += v
+        } else {
+          m.despesa += v
+          if (t.status === 'paid') m.saidas += v
+        }
+      })
+
+      // 3. Boletins — hectares pulverizados e faturamento por mês do serviço (período atual e anterior).
+      // A data considerada é a do serviço (scheduled_at); quando não há OS, usa created_at.
+      // Importante: boletins lançados em lote têm created_at ≠ data da pulverização.
+      const bulletins = await fetchAllRows<any>(() => supabase
+        .from('measurement_bulletins')
+        .select('hectares_sprayed, total_value, created_at, status, client_id, client:clients(name), service_order:service_orders(scheduled_at)')
+        .order('id'))
+
+      type ClientHa = { name: string; ha: number; months: Record<string, number> }
+      const curClients = new Map<string, ClientHa>()
+      const prevClients = new Map<string, ClientHa>()
+      const addHa = (map: Map<string, ClientHa>, id: string, name: string, ha: number, monthKey?: string) => {
+        const g = map.get(id) || { name, ha: 0, months: {} }
+        g.ha += ha
+        if (name) g.name = name
+        if (monthKey) g.months[monthKey] = (g.months[monthKey] || 0) + ha
+        map.set(id, g)
+      }
+
+      bulletins.forEach((b: any) => {
+        if (b.status === 'rejected' || b.status === 'cancelled') return
+        const ha = Number(b.hectares_sprayed) || 0
+        const effectiveDate = b.service_order?.scheduled_at || b.created_at
+        const ts = effectiveDate ? new Date(effectiveDate).getTime() : 0
+        const name = b.client?.name || 'Sem cliente'
+        const id = b.client_id || `nome:${name}`
+        if (ts >= periodStartMs && ts < periodEndMs) {
+          const d = new Date(ts)
+          const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
+          addHa(curClients, id, name, ha, key)
+          const m = monthMap.get(key)
+          if (m) {
+            m.hectares += ha
+            m.faturamento += Number(b.total_value) || 0
+          }
+        } else if (ts >= prevStartMs && ts < periodStartMs) {
+          addHa(prevClients, id, name, ha)
+        }
+      })
+
+      // Saldo de caixa acumulado ao fim de cada mês + resultado do mês
+      let running = saldoInicial + caixaAnterior
+      months.forEach((mk) => {
+        const m = monthMap.get(mk.key)!
+        m.resultado = m.faturamento - m.despesa
+        running += m.entradas - m.saidas
+        m.saldoCaixa = running
+      })
+      const series = months.map((m) => monthMap.get(m.key)!)
+
+      // Comparativo por cliente (atual × período anterior)
+      const ids = new Set<string>([...curClients.keys(), ...prevClients.keys()])
+      const clientComparison = [...ids]
+        .map((id) => {
+          const c = curClients.get(id)
+          const p = prevClients.get(id)
+          const haAtual = c?.ha || 0
+          const haAnterior = p?.ha || 0
+          const diff = haAtual - haAnterior
+          const pct = haAnterior > 0 ? (diff / haAnterior) * 100 : null
+          return { name: c?.name || p?.name || 'Sem cliente', haAtual, haAnterior, diff, pct, months: c?.months || {} }
+        })
+        .sort((a, b) => a.diff - b.diff)
+
+      const totals = series.reduce(
+        (acc, m) => {
+          acc.hectares += m.hectares
+          acc.faturamento += m.faturamento
+          acc.despesa += m.despesa
+          acc.entradas += m.entradas
+          acc.saidas += m.saidas
+          return acc
+        },
+        { hectares: 0, faturamento: 0, despesa: 0, entradas: 0, saidas: 0 }
+      )
+
+      return {
+        series,
+        clientComparison,
+        totals: {
+          ...totals,
+          resultado: totals.faturamento - totals.despesa,
+          saldoFinal: series[series.length - 1]?.saldoCaixa ?? saldoInicial + caixaAnterior,
+        },
+        novos: clientComparison.filter((c) => c.haAnterior === 0 && c.haAtual > 0).length,
+        perdidos: clientComparison.filter((c) => c.haAnterior > 0 && c.haAtual === 0).length,
+        reduziram: clientComparison.filter((c) => c.haAnterior > 0 && c.haAtual < c.haAnterior).length,
+        aumentaram: clientComparison.filter((c) => c.haAtual > c.haAnterior && c.haAnterior > 0).length,
+        prevRange: `${prevFirst.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })} – ${prevLast.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })}`,
+      }
+    },
+    placeholderData: keepPreviousData,
+  })
+
   if (isAuthLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -297,6 +520,10 @@ export function Dashboard() {
     faturasAtraso: [] as { desc: string; date: string; value: number }[],
     saldoCaixaAtual: 0
   }
+
+  const ps = periodStats
+  const psMaxCell = Math.max(1, ...(ps?.clientComparison.flatMap((c) => Object.values(c.months)) || [1]))
+  const psReducoes = (ps?.clientComparison || []).filter((c) => c.diff < 0).slice(0, 5)
 
   return (
     <div className="space-y-6 animate-in fade-in duration-700">
@@ -493,6 +720,305 @@ export function Dashboard() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* ── Análise por Período ── */}
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
+        <Card className="border-muted/50">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CalendarRange className="h-4 w-4 text-primary" />
+                  Análise por Período
+                  {isPeriodLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Hectares pulverizados, faturamento, despesas e saldo de caixa mês a mês. O período anterior de mesma duração é usado como base de comparação.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="month"
+                  value={periodStart}
+                  max={periodEnd}
+                  onChange={(e) => e.target.value && setPeriodStart(e.target.value)}
+                  className="flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <span className="text-xs text-muted-foreground">até</span>
+                <input
+                  type="month"
+                  value={periodEnd}
+                  min={periodStart}
+                  onChange={(e) => e.target.value && setPeriodEnd(e.target.value)}
+                  className="flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset(6)}>6 meses</Button>
+                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset(12)}>12 meses</Button>
+                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset('ytd')}>Este ano</Button>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!ps ? (
+              <p className="text-sm text-muted-foreground text-center py-6">Selecione um período válido.</p>
+            ) : (
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-x-4 gap-y-5">
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Droplets className="h-3.5 w-3.5 text-primary" /> Hectares Pulverizados</p>
+                  <p className="text-xl font-bold tracking-tight">{formatHa(ps.totals.hectares)}</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">no período selecionado</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Coins className="h-3.5 w-3.5 text-emerald-600" /> Faturamento</p>
+                  <p className="text-xl font-bold tracking-tight text-emerald-600">{formatCurrency(ps.totals.faturamento)}</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">serviços executados no período</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Receipt className="h-3.5 w-3.5 text-red-600" /> Despesas</p>
+                  <p className="text-xl font-bold tracking-tight text-red-600">{formatCurrency(ps.totals.despesa)}</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">pago + a pagar</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    {ps.totals.resultado >= 0 ? <TrendingUp className="h-3.5 w-3.5 text-emerald-600" /> : <TrendingDown className="h-3.5 w-3.5 text-red-600" />} Resultado
+                  </p>
+                  <p className={cn('text-xl font-bold tracking-tight', ps.totals.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.resultado)}</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">faturamento − despesas</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Banknote className="h-3.5 w-3.5" /> Saldo de Caixa</p>
+                  <p className={cn('text-xl font-bold tracking-tight', ps.totals.saldoFinal >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.saldoFinal)}</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">ao fim do período · entradas − saídas</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {ps && (
+          <>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <Card className="xl:col-span-2 border-muted/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    Faturamento por Serviço, Despesas e Saldo de Caixa
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="h-[320px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={ps.series} margin={{ top: 10, right: 16, left: 8, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
+                        <XAxis dataKey="label" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                          width={70}
+                          tickFormatter={(v: any) => `R$ ${Number(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k`}
+                        />
+                        <Tooltip
+                          formatter={(value: any, name: any) => [formatCurrency(Number(value) || 0), name]}
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '12px' }} verticalAlign="bottom" height={30} />
+                        <Bar dataKey="faturamento" name="Faturamento (serviço)" fill="#10b981" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="despesa" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                        <Line type="monotone" dataKey="saldoCaixa" name="Saldo de Caixa" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-muted/50">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Users className="h-4 w-4 text-primary" />
+                    Movimento de Clientes
+                  </CardTitle>
+                  <p className="text-[11px] text-muted-foreground">Hectares vs. período anterior ({ps.prevRange})</p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'Reduziram', value: ps.reduziram, className: 'text-red-600 bg-red-500/10 border-red-500/20' },
+                      { label: 'Aumentaram', value: ps.aumentaram, className: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20' },
+                      { label: 'Novos', value: ps.novos, className: 'text-blue-600 bg-blue-500/10 border-blue-500/20' },
+                      { label: 'Sem serviço', value: ps.perdidos, className: 'text-muted-foreground bg-muted/40 border-border/40' },
+                    ].map((s) => (
+                      <div key={s.label} className={cn('rounded-xl border p-3 text-center', s.className)}>
+                        <p className="text-2xl font-bold leading-none">{s.value}</p>
+                        <p className="text-[11px] font-medium mt-1">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-2">Maiores reduções</p>
+                    {psReducoes.length === 0 ? (
+                      <p className="text-xs text-muted-foreground py-2">Nenhuma redução de demanda no período.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {psReducoes.map((c) => (
+                          <div key={c.name} className="flex items-center justify-between gap-2 text-xs p-2 rounded-lg bg-muted/20 border border-border/40">
+                            <span className="truncate font-medium" title={c.name}>{c.name}</span>
+                            <span className="whitespace-nowrap text-red-600 font-semibold">
+                              {formatHa(c.haAtual)} ha
+                              <span className="text-muted-foreground font-normal"> / {formatHa(c.haAnterior)} ha</span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card className="border-muted/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Scale className="h-4 w-4 text-primary" />
+                  Evolução Mensal
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="pl-6">Mês</TableHead>
+                      <TableHead className="text-right">Hectares</TableHead>
+                      <TableHead className="text-right text-emerald-600">Faturamento (serviço)</TableHead>
+                      <TableHead className="text-right text-red-600">Despesas</TableHead>
+                      <TableHead className="text-right">Resultado</TableHead>
+                      <TableHead className="text-right text-emerald-600">Entradas (caixa)</TableHead>
+                      <TableHead className="text-right text-red-600">Saídas (caixa)</TableHead>
+                      <TableHead className="text-right pr-6 font-bold text-primary">Saldo de Caixa</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {ps.series.map((m, i) => {
+                      const prevHa = i > 0 ? ps.series[i - 1].hectares : null
+                      const varHa = prevHa && prevHa > 0 ? ((m.hectares - prevHa) / prevHa) * 100 : null
+                      return (
+                      <TableRow key={m.key} className="hover:bg-muted/30">
+                        <TableCell className="pl-6 font-medium capitalize">
+                          {new Date(m.year, m.month - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span>{formatHa(m.hectares)}</span>
+                            {varHa !== null && (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-0.5 text-[11px] font-medium',
+                                  varHa > 0 ? 'text-emerald-600' : varHa < 0 ? 'text-red-600' : 'text-muted-foreground'
+                                )}
+                                title={`vs. mês anterior: ${formatHa(prevHa!)} ha`}
+                              >
+                                {varHa > 0 ? <ArrowUpRight className="h-3 w-3" /> : varHa < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
+                                {Math.abs(varHa).toFixed(0)}%
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right text-emerald-600 font-medium">{formatCurrency(m.faturamento)}</TableCell>
+                        <TableCell className="text-right text-red-600 font-medium">{formatCurrency(m.despesa)}</TableCell>
+                        <TableCell className={cn('text-right font-medium', m.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(m.resultado)}</TableCell>
+                        <TableCell className="text-right text-emerald-600">{formatCurrency(m.entradas)}</TableCell>
+                        <TableCell className="text-right text-red-600">{formatCurrency(m.saidas)}</TableCell>
+                        <TableCell className={cn('text-right pr-6 font-bold', m.saldoCaixa >= 0 ? 'text-primary' : 'text-red-500')}>{formatCurrency(m.saldoCaixa)}</TableCell>
+                      </TableRow>
+                      )
+                    })}
+                    <TableRow className="bg-muted/40 font-semibold border-t-2">
+                      <TableCell className="pl-6">Total</TableCell>
+                      <TableCell className="text-right">{formatHa(ps.totals.hectares)}</TableCell>
+                      <TableCell className="text-right text-emerald-600">{formatCurrency(ps.totals.faturamento)}</TableCell>
+                      <TableCell className="text-right text-red-600">{formatCurrency(ps.totals.despesa)}</TableCell>
+                      <TableCell className={cn('text-right', ps.totals.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.resultado)}</TableCell>
+                      <TableCell className="text-right text-emerald-600">{formatCurrency(ps.totals.entradas)}</TableCell>
+                      <TableCell className="text-right text-red-600">{formatCurrency(ps.totals.saidas)}</TableCell>
+                      <TableCell className={cn('text-right pr-6', ps.totals.saldoFinal >= 0 ? 'text-primary' : 'text-red-500')}>{formatCurrency(ps.totals.saldoFinal)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            <Card className="border-muted/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Droplets className="h-4 w-4 text-primary" />
+                  Hectares por Cliente — Histórico Mensal
+                </CardTitle>
+                <p className="text-[11px] text-muted-foreground">
+                  Hectares pulverizados por mês. O “—” em vermelho indica mês sem pulverização para o cliente. Ordenado por maior redução vs. período anterior ({ps.prevRange}).
+                </p>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="max-h-[520px] overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="pl-6 sticky left-0 z-10 bg-card min-w-[200px]">Cliente</TableHead>
+                        {ps.series.map((m) => (
+                          <TableHead key={m.key} className="text-center px-2 whitespace-nowrap font-medium">{m.label}</TableHead>
+                        ))}
+                        <TableHead className="text-right pr-6 whitespace-nowrap">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {ps.clientComparison.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={ps.series.length + 2} className="text-center py-6 text-muted-foreground">
+                            Nenhum hectare pulverizado registrado nos períodos comparados.
+                          </TableCell>
+                        </TableRow>
+                      ) : ps.clientComparison.map((c) => (
+                        <TableRow key={c.name} className={cn('hover:bg-muted/30', c.haAnterior > 0 && c.haAtual === 0 && 'bg-red-500/5')}>
+                          <TableCell className="pl-6 font-medium truncate max-w-[200px] sticky left-0 z-10 bg-card" title={c.name}>{c.name}</TableCell>
+                          {ps.series.map((m, i) => {
+                            const ha = c.months[m.key] || 0
+                            const prevHa = i > 0 ? c.months[ps.series[i - 1].key] || 0 : null
+                            const trend = prevHa === null || ha === prevHa ? null : ha > prevHa ? 'up' : 'down'
+                            const alpha = ha > 0 ? 0.08 + 0.32 * (ha / psMaxCell) : 0
+                            return (
+                              <TableCell
+                                key={m.key}
+                                className={cn(
+                                  'text-center px-2 tabular-nums',
+                                  ha > 0 ? 'font-medium' : 'text-muted-foreground/40 bg-red-500/5'
+                                )}
+                                style={ha > 0 ? { backgroundColor: `rgba(16, 185, 129, ${alpha.toFixed(3)})` } : undefined}
+                                title={prevHa === null ? undefined : `vs. mês anterior: ${formatHa(prevHa)} ha`}
+                              >
+                                <span className="inline-flex items-center justify-center gap-0.5">
+                                  {trend === 'up' ? (
+                                    <ArrowUp className="h-3 w-3 shrink-0 text-emerald-700" strokeWidth={3} />
+                                  ) : trend === 'down' ? (
+                                    <ArrowDown className="h-3 w-3 shrink-0 text-red-600" strokeWidth={3} />
+                                  ) : null}
+                                  <span>{ha > 0 ? formatHa(ha) : '—'}</span>
+                                </span>
+                              </TableCell>
+                            )
+                          })}
+                          <TableCell className="text-right pr-6 font-semibold whitespace-nowrap">{formatHa(c.haAtual)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Main content grid */}
