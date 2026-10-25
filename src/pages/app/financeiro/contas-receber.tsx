@@ -17,6 +17,7 @@ import { generateFinancialReport } from '@/lib/pdf-report'
 import { PdfPreviewDialog, usePdfPreview } from '@/components/pdf-preview-dialog'
 import type { Transaction } from '@/types/entities'
 import { Pagination } from '@/components/ui/pagination'
+import { monthCashFilter, fetchAllRows } from '@/lib/finance'
 
 
 
@@ -54,21 +55,20 @@ export function ContasReceberPage() {
   const { data: transactions = [], isError: isTransError } = useQuery({
     queryKey: ['transactions_income', monthFilter],
     queryFn: async () => {
-      let query = supabase.from('transactions')
-        .select('*, category:financial_categories(name), cost_center:cost_centers(name), bulletin:measurement_bulletins(invoice_number, invoice_url, boleto_url, service_orders(clients(name)))')
-        .eq('type', 'income')
-        .order('due_date', { ascending: false })
+      return fetchAllRows<Transaction>(() => {
+        let query = supabase.from('transactions')
+          .select('*, category:financial_categories(name), cost_center:cost_centers(name), bulletin:measurement_bulletins(invoice_number, invoice_url, boleto_url, service_orders(clients(name)))')
+          .eq('type', 'income')
+          .order('due_date', { ascending: false })
+          .order('id', { ascending: true })
 
-      // Filtro de mês direto no servidor
-      if (monthFilter) {
-        const [year, month] = monthFilter.split('-')
-        const start = `${year}-${month}-01`
-        const end = new Date(Number(year), Number(month), 0).toISOString().split('T')[0]
-        query = query.gte('due_date', start).lte('due_date', end)
-      }
-
-      const { data, error } = await query.limit(1000)
-      if (error) throw error; return data
+        // Pendentes no mês do vencimento; recebidas no mês da baixa (caixa)
+        if (monthFilter) {
+          const [year, month] = monthFilter.split('-').map(Number)
+          query = query.or(monthCashFilter(year, month))
+        }
+        return query
+      })
     }
   })
 

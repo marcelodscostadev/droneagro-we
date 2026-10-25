@@ -17,6 +17,7 @@ import { generateFinancialReport } from '@/lib/pdf-report'
 import { PdfPreviewDialog, usePdfPreview } from '@/components/pdf-preview-dialog'
 import type { Transaction } from '@/types/entities'
 import { Pagination } from '@/components/ui/pagination'
+import { monthCashFilter, fetchAllRows } from '@/lib/finance'
 
 
 
@@ -57,24 +58,21 @@ export function ContasPagarPage() {
   const { data: transactions = [], isError: isTransError } = useQuery({
     queryKey: ['transactions_expense', monthFilter],
     queryFn: async () => {
-      let query = supabase.from('transactions')
-        .select('*, category:financial_categories(name), cost_center:cost_centers(name), technician_id, technician:profiles(name)')
-        .eq('type', 'expense')
-        .order('due_date', { ascending: true })
+      const data = await fetchAllRows<Transaction>(() => {
+        let query = supabase.from('transactions')
+          .select('*, category:financial_categories(name), cost_center:cost_centers(name), technician_id, technician:profiles(name)')
+          .eq('type', 'expense')
+          .order('due_date', { ascending: true })
+          .order('id', { ascending: true })
 
-      // Pendentes no mês do vencimento; pagas no mês da baixa (caixa)
-      if (monthFilter) {
-        const [year, month] = monthFilter.split('-')
-        const start = `${year}-${month}-01`
-        const end = new Date(Number(year), Number(month), 0).toISOString().split('T')[0]
-        query = query.or(
-          `and(status.eq.pending,due_date.gte.${start},due_date.lte.${end}),and(status.eq.paid,paid_at.gte.${start},paid_at.lte.${end}T23:59:59)`
-        )
-      }
-
-      const { data, error } = await query.limit(1000)
-      if (error) throw error
-      return (data || []).sort((a: Transaction, b: Transaction) => {
+        // Pendentes no mês do vencimento; pagas no mês da baixa (caixa)
+        if (monthFilter) {
+          const [year, month] = monthFilter.split('-').map(Number)
+          query = query.or(monthCashFilter(year, month))
+        }
+        return query
+      })
+      return data.sort((a: Transaction, b: Transaction) => {
         const da = a.status === 'paid' ? (a.paid_at || a.due_date || '') : (a.due_date || '')
         const db = b.status === 'paid' ? (b.paid_at || b.due_date || '') : (b.due_date || '')
         return da.localeCompare(db)

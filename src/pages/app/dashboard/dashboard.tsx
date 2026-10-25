@@ -8,6 +8,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { monthCashFilter, fetchAllRows } from '@/lib/finance'
 
 const STATUS_CONFIG: Record<string, { label: string; variant: 'success' | 'warning' | 'secondary' | 'outline' }> = {
   'finished': { label: 'Concluído', variant: 'success' },
@@ -114,20 +115,22 @@ export function Dashboard() {
         .eq('status', 'pending')
 
       // 3. A Receber (Mês)
-      const { data: contasReceber } = await supabase
+      const contasReceber = await fetchAllRows<{ amount: number }>(() => supabase
         .from('transactions')
         .select('amount')
         .eq('type', 'income')
         .eq('status', 'pending')
+        .order('id'))
       const aReceberMes = contasReceber?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
 
       // 4. Comissões Pendentes
-      const { data: comissoes } = await supabase
+      const comissoes = await fetchAllRows<{ amount: number }>(() => supabase
         .from('transactions')
         .select('amount')
         .eq('type', 'expense')
         .eq('status', 'pending')
         .not('technician_id', 'is', null)
+        .order('id'))
       const comissoesPendentes = comissoes?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
 
       // 5. Resumo do Mês (OS Concluídas, Hectares)
@@ -151,18 +154,19 @@ export function Dashboard() {
         .gte('created_at', startOfMonth)
       const hectaresMes = boletinsMes?.reduce((acc, curr) => acc + Number(curr.hectares_sprayed), 0) || 0
 
-      // 7. Financeiro do Mês (por data de vencimento) + Despesas por tipo
+      // 7. Financeiro do Mês (pendentes por vencimento, pagas por baixa) + Despesas por tipo
       const pad = (n: number) => String(n).padStart(2, '0')
       const startOfMonthStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
       const lastDayMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
       const endOfMonthStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(lastDayMonth)}`
       const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 
-      const { data: transMes = [] } = await supabase
+      // Pendentes no mês do vencimento; pagas no mês da baixa (mesma regra de Contas a Pagar/Receber)
+      const transMes = await fetchAllRows(() => supabase
         .from('transactions')
         .select('type, amount, status, due_date, description, category:financial_categories(name), bulletin:measurement_bulletins(service_orders(clients(name)))')
-        .gte('due_date', startOfMonthStr)
-        .lte('due_date', endOfMonthStr)
+        .or(monthCashFilter(now.getFullYear(), now.getMonth() + 1))
+        .order('id'))
 
       let prevReceitaMes = 0, prevDespesaMes = 0, recebidoMes = 0, pagoMes = 0
       const despPorTipoMap = new Map<string, { total: number; items: { desc: string; date: string; value: number; paid: boolean }[] }>()
@@ -191,12 +195,13 @@ export function Dashboard() {
       const pontoEquilibrioPct = despesaTotalMes > 0 ? Math.min((receitaTotalMes / despesaTotalMes) * 100, 999) : 0
 
       // 8. Atrasos (receitas vencidas) + clientes em atraso
-      const { data: atrasadas = [] } = await supabase
+      const atrasadas = await fetchAllRows(() => supabase
         .from('transactions')
         .select('amount, description, due_date, bulletin:measurement_bulletins(service_orders(clients(name)))')
         .eq('type', 'income')
         .eq('status', 'pending')
         .lt('due_date', todayStr)
+        .order('id'))
 
       const totalAtrasado = (atrasadas as any[]).reduce((acc, t) => acc + (Number(t.amount) || 0), 0)
       const clientesAtrasoSet = new Set<string>()
@@ -213,10 +218,11 @@ export function Dashboard() {
         .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
 
       // 9. Saldo de caixa atual (tudo que entrou - tudo que saiu)
-      const { data: saldos = [] } = await supabase
+      const saldos = await fetchAllRows(() => supabase
         .from('transactions')
         .select('type, amount')
         .eq('status', 'paid')
+        .order('id'))
       const saldoCaixaAtual = (saldos as any[]).reduce(
         (acc, t) => acc + (t.type === 'income' ? Number(t.amount) || 0 : -(Number(t.amount) || 0)),
         0
