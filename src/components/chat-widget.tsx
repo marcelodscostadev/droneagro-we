@@ -15,8 +15,25 @@ const getSystemInstruction = () => {
   const today = new Date();
   const dateStr = today.toLocaleDateString('pt-BR');
   const timeStr = today.toLocaleTimeString('pt-BR');
-  return `Você é o Assistente Especialista em Drones e Agronegócio do sistema DroneAgro. Responda de forma clara, prestativa e objetiva. Você tem as ferramentas 'read_database' e 'write_database' para acessar ou modificar o sistema. SEMPRE confira se a ação é segura e não hesite em usar as ferramentas para ler saldos, relatórios e clientes. INFORMAÇÃO DE CONTEXTO MUNDIAL: A data atual do sistema é ${dateStr} e a hora é ${timeStr}. Quando o usuário disser "hoje", "este mês", "ontem", "amanhã", etc, use sempre esta data base para suas consultas na base de dados e respostas.`
+  return `Você é o Assistente Especialista em Drones e Agronegócio do sistema DroneAgro. Responda de forma clara, prestativa e objetiva. Você tem as ferramentas 'read_database' e 'write_database' para acessar ou modificar o sistema. SEMPRE confira se a ação é segura e não hesite em usar as ferramentas para ler saldos, relatórios e clientes. INFORMAÇÃO DE CONTEXTO MUNDIAL: A data atual do sistema é ${dateStr} e a hora é ${timeStr}. Quando o usuário disser "hoje", "este mês", "ontem", "amanhã", etc, use sempre esta data base para suas consultas na base de dados e respostas.
+
+${DB_SCHEMA}
+
+REGRAS DE DESEMPENHO:
+- Use o esquema acima diretamente; NÃO faça consultas exploratórias para descobrir colunas ou status.
+- Para "quantos" use mode='count'; para valores totais use mode='sum'. Só liste linhas quando o usuário pedir detalhes.
+- Se precisar de várias consultas independentes, chame as ferramentas todas de uma vez na mesma resposta.`
 }
+
+const DB_SCHEMA = `ESQUEMA DO BANCO (principais colunas):
+- measurement_bulletins (boletins): id, created_at, status, hectares_sprayed, total_value, service_order_id, client_id, invoice_number.
+  status: 'pending' = tela mostra "Pendentes" (aguardando aprovação) | 'approved' = tela mostra "Aguardando Faturamento" (pronto p/ faturar) | 'invoiced' = faturado | 'rejected' = rejeitado.
+  IMPORTANTE: quando o usuário perguntar por boletins "pendentes" (mesmo dizendo "pendentes de/para faturamento"), conte AMBOS os status 'pending' e 'approved' (duas consultas count em paralelo) e responda separando: "X pendentes de aprovação" e "Y aprovados aguardando faturamento". Boletins não têm filtro de data por padrão — não filtre por mês a menos que o usuário peça.
+- service_orders (OS/agendamentos): id, os_number, scheduled_at, status, type ('demo' = demonstração), area_ha, client_id, technician_id.
+  status: 'pending_client', 'scheduled', 'rescheduled', 'traveling', 'in_activity', 'finished', 'cancelled'.
+- transactions (financeiro): id, type ('income' = receber | 'expense' = pagar), amount, status ('pending' | 'paid'), due_date (vencimento), paid_at (data da baixa), description, category_id, technician_id (preenchido = comissão), bulletin_id.
+- clients: id, name.
+- daily_shifts: turnos diários dos técnicos.`
 
 interface Message {
   role: 'user' | 'model'
@@ -263,22 +280,24 @@ export function ChatWidget() {
 
         const data = await res.json()
         const candidate = data.candidates?.[0]
-        const part = candidate?.content?.parts?.[0]
+        const parts: any[] = candidate?.content?.parts || []
+        if (parts.length === 0) break
 
-        if (!part) break
+        const calls = parts.filter((p) => p.functionCall)
+        if (calls.length > 0) {
+          contents.push({ role: 'model', parts })
 
-        if (part.functionCall) {
-          const { name, args } = part.functionCall
-          contents.push({ role: 'model', parts: candidate.content.parts })
-          
-          const result = await executeAgentTool(name, args)
-          
-          contents.push({
-            role: 'user',
-            parts: [{ functionResponse: { name, response: { result } } }]
-          })
+          // Executa todas as ferramentas pedidas nesta rodada em paralelo
+          const results = await Promise.all(
+            calls.map(async (p) => {
+              const { name, args } = p.functionCall
+              const result = await executeAgentTool(name, args)
+              return { functionResponse: { name, response: { result } } }
+            })
+          )
+          contents.push({ role: 'user', parts: results })
         } else {
-          responseText = part.text || ''
+          responseText = parts.map((p) => p.text || '').join('')
           isDone = true
         }
       }
