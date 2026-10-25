@@ -1,7 +1,7 @@
 import { Cpu, CalendarDays, CheckCircle, Clock, TrendingUp, FileBarChart, Sprout, Gauge, Loader2, ChevronLeft, ChevronRight, Users, Wallet, Scale, PiggyBank, Banknote, CalendarRange, TrendingDown, ArrowUp, ArrowUpRight, ArrowDown, ArrowDownRight, Droplets, Coins, Receipt } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/hooks/useAuth'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { cn, formatCurrency } from '@/lib/utils'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
@@ -65,6 +65,8 @@ export function Dashboard() {
   const [agendaDate, setAgendaDate] = useState(new Date())
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date(agendaDate.getFullYear(), agendaDate.getMonth(), 1))
   const [showCalendar, setShowCalendar] = useState(false)
+  const [histTab, setHistTab] = useState<'mensal' | 'clientes'>('mensal')
+  const navigate = useNavigate()
 
   // ── Filtro de período da análise (padrão: últimos 12 meses) ──────────────────
   const nowRef = new Date()
@@ -569,7 +571,11 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-muted/50 bg-gradient-to-b from-card to-card/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-default group">
+        <Card
+          className="relative overflow-hidden border-muted/50 bg-gradient-to-b from-card to-card/50 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer group"
+          onClick={() => navigate('/boletins')}
+          title="Ver boletins"
+        >
           <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
             <CardTitle className="text-sm font-medium text-muted-foreground group-hover:text-amber-600 transition-colors">Boletins Pendentes</CardTitle>
@@ -583,7 +589,11 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="relative border-red-500/20 bg-red-500/5 group/atraso">
+        <Card
+          className="relative border-red-500/20 bg-red-500/5 group/atraso cursor-pointer hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+          onClick={() => navigate('/financeiro/receber')}
+          title="Ver contas a receber"
+        >
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
             <CardTitle className="text-sm font-medium text-muted-foreground group-hover:text-red-600 transition-colors">Clientes em Atraso</CardTitle>
             <div className="p-2 bg-red-500/10 rounded-xl group-hover:scale-110 transition-all duration-300">
@@ -623,406 +633,8 @@ export function Dashboard() {
         </Card>
       </div>
 
-      {/* Financeiro do Mês - Consolidado */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
-        <Card className="xl:col-span-2 border-muted/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base capitalize">
-              <Scale className="h-4 w-4 text-primary" />
-              Financeiro · {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-x-4 gap-y-5">
-              <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Banknote className="h-3.5 w-3.5" /> Saldo em Caixa</p>
-                <p className={`text-xl font-bold tracking-tight ${data.saldoCaixaAtual >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(data.saldoCaixaAtual)}</p>
-                <p className="text-[11px] text-muted-foreground leading-snug">entradas − saídas realizadas</p>
-              </div>
-              <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><TrendingUp className="h-3.5 w-3.5 text-emerald-600" /> Receita do Mês</p>
-                <p className="text-xl font-bold tracking-tight text-emerald-600">{formatCurrency(data.recebidoMes + data.prevReceitaMes)}</p>
-                <p className="text-[11px] text-muted-foreground leading-snug">Recebido: {formatCurrency(data.recebidoMes)}<br />A receber: {formatCurrency(data.prevReceitaMes)}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Wallet className="h-3.5 w-3.5 text-red-600" /> Despesa do Mês</p>
-                <p className="text-xl font-bold tracking-tight text-red-600">{formatCurrency(data.pagoMes + data.prevDespesaMes)}</p>
-                <p className="text-[11px] text-muted-foreground leading-snug">Pago: {formatCurrency(data.pagoMes)}<br />A pagar: {formatCurrency(data.prevDespesaMes)}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><PiggyBank className="h-3.5 w-3.5" /> Saldo Projetado</p>
-                <p className={`text-xl font-bold tracking-tight ${data.saldoProjetadoMes >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(data.saldoProjetadoMes)}</p>
-                <p className="text-[11px] text-muted-foreground leading-snug">fim do mês · receitas − despesas</p>
-              </div>
-              <div className="space-y-1">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Scale className="h-3.5 w-3.5" /> Ponto de Equilíbrio</p>
-                <p className="text-xl font-bold tracking-tight text-foreground">{formatCurrency(data.pagoMes + data.prevDespesaMes)}</p>
-                <p className={`text-[11px] font-medium leading-snug ${data.pontoEquilibrioPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                  {data.pontoEquilibrioPct >= 100
-                    ? 'atingido ✓'
-                    : `faltam ${formatCurrency((data.pagoMes + data.prevDespesaMes) - (data.recebidoMes + data.prevReceitaMes))}`}
-                </p>
-              </div>
-            </div>
-
-          </CardContent>
-        </Card>
-
-        <Card className="border-muted/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Wallet className="h-4 w-4 text-primary" />
-              Despesas por Tipo
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {data.despesasPorTipo.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">Nenhuma despesa lançada neste mês.</p>
-            ) : (
-              (() => {
-                const maxTotal = data.despesasPorTipo[0]?.total || 1
-                const CORES = ['bg-primary', 'bg-amber-500', 'bg-red-500', 'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500']
-                return data.despesasPorTipo.slice(0, 8).map((d, i) => (
-                  <div key={d.name} className="relative space-y-1 group/row">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium truncate max-w-[70%] cursor-default" title={d.name}>{d.name}</span>
-                      <span className="font-semibold">{formatCurrency(d.total)}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${CORES[i % CORES.length]}`}
-                        style={{ width: `${Math.max((d.total / maxTotal) * 100, 2)}%` }}
-                      />
-                    </div>
-
-                    {/* Tooltip com os lançamentos da categoria */}
-                    <div className="hidden group-hover/row:block absolute right-0 top-7 z-30 w-80 rounded-lg border border-border bg-popover text-popover-foreground shadow-xl p-3">
-                      <p className="text-xs font-semibold mb-2">
-                        {d.name} · {formatCurrency(d.total)}
-                      </p>
-                      <div className="max-h-52 overflow-y-auto space-y-1.5">
-                        {d.items.map((it, idx) => (
-                          <div key={idx} className="flex items-center justify-between gap-2 text-xs">
-                            <span className="truncate text-muted-foreground">
-                              <span className="text-foreground/70">{it.date ? new Date(`${it.date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}</span>
-                              {' · '}{it.desc}
-                            </span>
-                            <span className={`whitespace-nowrap font-medium ${it.paid ? 'text-muted-foreground' : 'text-amber-600'}`}>
-                              {formatCurrency(it.value)}{!it.paid && ' (a pagar)'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              })()
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Análise por Período ── */}
-      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-150">
-        <Card className="border-muted/50">
-          <CardHeader className="pb-3">
-            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <CalendarRange className="h-4 w-4 text-primary" />
-                  Análise por Período
-                  {isPeriodLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                </CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Hectares pulverizados, faturamento, despesas e saldo de caixa mês a mês. O período anterior de mesma duração é usado como base de comparação.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="month"
-                  value={periodStart}
-                  max={periodEnd}
-                  onChange={(e) => e.target.value && setPeriodStart(e.target.value)}
-                  className="flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                <span className="text-xs text-muted-foreground">até</span>
-                <input
-                  type="month"
-                  value={periodEnd}
-                  min={periodStart}
-                  onChange={(e) => e.target.value && setPeriodEnd(e.target.value)}
-                  className="flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset(6)}>6 meses</Button>
-                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset(12)}>12 meses</Button>
-                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset('ytd')}>Este ano</Button>
-                </div>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {!ps ? (
-              <p className="text-sm text-muted-foreground text-center py-6">Selecione um período válido.</p>
-            ) : (
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-x-4 gap-y-5">
-                <div className="space-y-1">
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Droplets className="h-3.5 w-3.5 text-primary" /> Hectares Pulverizados</p>
-                  <p className="text-xl font-bold tracking-tight">{formatHa(ps.totals.hectares)}</p>
-                  <p className="text-[11px] text-muted-foreground leading-snug">no período selecionado</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Coins className="h-3.5 w-3.5 text-emerald-600" /> Faturamento</p>
-                  <p className="text-xl font-bold tracking-tight text-emerald-600">{formatCurrency(ps.totals.faturamento)}</p>
-                  <p className="text-[11px] text-muted-foreground leading-snug">serviços executados no período</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Receipt className="h-3.5 w-3.5 text-red-600" /> Despesas</p>
-                  <p className="text-xl font-bold tracking-tight text-red-600">{formatCurrency(ps.totals.despesa)}</p>
-                  <p className="text-[11px] text-muted-foreground leading-snug">pago + a pagar</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    {ps.totals.resultado >= 0 ? <TrendingUp className="h-3.5 w-3.5 text-emerald-600" /> : <TrendingDown className="h-3.5 w-3.5 text-red-600" />} Resultado
-                  </p>
-                  <p className={cn('text-xl font-bold tracking-tight', ps.totals.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.resultado)}</p>
-                  <p className="text-[11px] text-muted-foreground leading-snug">faturamento − despesas</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Banknote className="h-3.5 w-3.5" /> Saldo de Caixa</p>
-                  <p className={cn('text-xl font-bold tracking-tight', ps.totals.saldoFinal >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.saldoFinal)}</p>
-                  <p className="text-[11px] text-muted-foreground leading-snug">ao fim do período · entradas − saídas</p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {ps && (
-          <>
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-              <Card className="xl:col-span-2 border-muted/50">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-primary" />
-                    Faturamento por Serviço, Despesas e Saldo de Caixa
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-4">
-                  <div className="h-[320px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={ps.series} margin={{ top: 10, right: 16, left: 8, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
-                        <XAxis dataKey="label" fontSize={11} tickLine={false} axisLine={false} />
-                        <YAxis
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                          width={70}
-                          tickFormatter={(v: any) => `R$ ${Number(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k`}
-                        />
-                        <Tooltip
-                          formatter={(value: any, name: any) => [formatCurrency(Number(value) || 0), name]}
-                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                        />
-                        <Legend wrapperStyle={{ fontSize: '12px' }} verticalAlign="bottom" height={30} />
-                        <Bar dataKey="faturamento" name="Faturamento (serviço)" fill="#10b981" radius={[4, 4, 0, 0]} />
-                        <Bar dataKey="despesa" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                        <Line type="monotone" dataKey="saldoCaixa" name="Saldo de Caixa" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-muted/50">
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Users className="h-4 w-4 text-primary" />
-                    Movimento de Clientes
-                  </CardTitle>
-                  <p className="text-[11px] text-muted-foreground">Hectares vs. período anterior ({ps.prevRange})</p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { label: 'Reduziram', value: ps.reduziram, className: 'text-red-600 bg-red-500/10 border-red-500/20' },
-                      { label: 'Aumentaram', value: ps.aumentaram, className: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20' },
-                      { label: 'Novos', value: ps.novos, className: 'text-blue-600 bg-blue-500/10 border-blue-500/20' },
-                      { label: 'Sem serviço', value: ps.perdidos, className: 'text-muted-foreground bg-muted/40 border-border/40' },
-                    ].map((s) => (
-                      <div key={s.label} className={cn('rounded-xl border p-3 text-center', s.className)}>
-                        <p className="text-2xl font-bold leading-none">{s.value}</p>
-                        <p className="text-[11px] font-medium mt-1">{s.label}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground mb-2">Maiores reduções</p>
-                    {psReducoes.length === 0 ? (
-                      <p className="text-xs text-muted-foreground py-2">Nenhuma redução de demanda no período.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {psReducoes.map((c) => (
-                          <div key={c.name} className="flex items-center justify-between gap-2 text-xs p-2 rounded-lg bg-muted/20 border border-border/40">
-                            <span className="truncate font-medium" title={c.name}>{c.name}</span>
-                            <span className="whitespace-nowrap text-red-600 font-semibold">
-                              {formatHa(c.haAtual)} ha
-                              <span className="text-muted-foreground font-normal"> / {formatHa(c.haAnterior)} ha</span>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card className="border-muted/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Scale className="h-4 w-4 text-primary" />
-                  Evolução Mensal
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="pl-6">Mês</TableHead>
-                      <TableHead className="text-right">Hectares</TableHead>
-                      <TableHead className="text-right text-emerald-600">Faturamento (serviço)</TableHead>
-                      <TableHead className="text-right text-red-600">Despesas</TableHead>
-                      <TableHead className="text-right">Resultado</TableHead>
-                      <TableHead className="text-right text-emerald-600">Entradas (caixa)</TableHead>
-                      <TableHead className="text-right text-red-600">Saídas (caixa)</TableHead>
-                      <TableHead className="text-right pr-6 font-bold text-primary">Saldo de Caixa</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ps.series.map((m, i) => {
-                      const prevHa = i > 0 ? ps.series[i - 1].hectares : null
-                      const varHa = prevHa && prevHa > 0 ? ((m.hectares - prevHa) / prevHa) * 100 : null
-                      return (
-                      <TableRow key={m.key} className="hover:bg-muted/30">
-                        <TableCell className="pl-6 font-medium capitalize">
-                          {new Date(m.year, m.month - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <span>{formatHa(m.hectares)}</span>
-                            {varHa !== null && (
-                              <span
-                                className={cn(
-                                  'inline-flex items-center gap-0.5 text-[11px] font-medium',
-                                  varHa > 0 ? 'text-emerald-600' : varHa < 0 ? 'text-red-600' : 'text-muted-foreground'
-                                )}
-                                title={`vs. mês anterior: ${formatHa(prevHa!)} ha`}
-                              >
-                                {varHa > 0 ? <ArrowUpRight className="h-3 w-3" /> : varHa < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
-                                {Math.abs(varHa).toFixed(0)}%
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right text-emerald-600 font-medium">{formatCurrency(m.faturamento)}</TableCell>
-                        <TableCell className="text-right text-red-600 font-medium">{formatCurrency(m.despesa)}</TableCell>
-                        <TableCell className={cn('text-right font-medium', m.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(m.resultado)}</TableCell>
-                        <TableCell className="text-right text-emerald-600">{formatCurrency(m.entradas)}</TableCell>
-                        <TableCell className="text-right text-red-600">{formatCurrency(m.saidas)}</TableCell>
-                        <TableCell className={cn('text-right pr-6 font-bold', m.saldoCaixa >= 0 ? 'text-primary' : 'text-red-500')}>{formatCurrency(m.saldoCaixa)}</TableCell>
-                      </TableRow>
-                      )
-                    })}
-                    <TableRow className="bg-muted/40 font-semibold border-t-2">
-                      <TableCell className="pl-6">Total</TableCell>
-                      <TableCell className="text-right">{formatHa(ps.totals.hectares)}</TableCell>
-                      <TableCell className="text-right text-emerald-600">{formatCurrency(ps.totals.faturamento)}</TableCell>
-                      <TableCell className="text-right text-red-600">{formatCurrency(ps.totals.despesa)}</TableCell>
-                      <TableCell className={cn('text-right', ps.totals.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.resultado)}</TableCell>
-                      <TableCell className="text-right text-emerald-600">{formatCurrency(ps.totals.entradas)}</TableCell>
-                      <TableCell className="text-right text-red-600">{formatCurrency(ps.totals.saidas)}</TableCell>
-                      <TableCell className={cn('text-right pr-6', ps.totals.saldoFinal >= 0 ? 'text-primary' : 'text-red-500')}>{formatCurrency(ps.totals.saldoFinal)}</TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-
-            <Card className="border-muted/50">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Droplets className="h-4 w-4 text-primary" />
-                  Hectares por Cliente — Histórico Mensal
-                </CardTitle>
-                <p className="text-[11px] text-muted-foreground">
-                  Hectares pulverizados por mês. O “—” em vermelho indica mês sem pulverização para o cliente. Ordenado por maior redução vs. período anterior ({ps.prevRange}).
-                </p>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="max-h-[520px] overflow-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="pl-6 sticky left-0 z-10 bg-card min-w-[200px]">Cliente</TableHead>
-                        {ps.series.map((m) => (
-                          <TableHead key={m.key} className="text-center px-2 whitespace-nowrap font-medium">{m.label}</TableHead>
-                        ))}
-                        <TableHead className="text-right pr-6 whitespace-nowrap">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {ps.clientComparison.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={ps.series.length + 2} className="text-center py-6 text-muted-foreground">
-                            Nenhum hectare pulverizado registrado nos períodos comparados.
-                          </TableCell>
-                        </TableRow>
-                      ) : ps.clientComparison.map((c) => (
-                        <TableRow key={c.name} className={cn('hover:bg-muted/30', c.haAnterior > 0 && c.haAtual === 0 && 'bg-red-500/5')}>
-                          <TableCell className="pl-6 font-medium truncate max-w-[200px] sticky left-0 z-10 bg-card" title={c.name}>{c.name}</TableCell>
-                          {ps.series.map((m, i) => {
-                            const ha = c.months[m.key] || 0
-                            const prevHa = i > 0 ? c.months[ps.series[i - 1].key] || 0 : null
-                            const trend = prevHa === null || ha === prevHa ? null : ha > prevHa ? 'up' : 'down'
-                            const alpha = ha > 0 ? 0.08 + 0.32 * (ha / psMaxCell) : 0
-                            return (
-                              <TableCell
-                                key={m.key}
-                                className={cn(
-                                  'text-center px-2 tabular-nums',
-                                  ha > 0 ? 'font-medium' : 'text-muted-foreground/40 bg-red-500/5'
-                                )}
-                                style={ha > 0 ? { backgroundColor: `rgba(16, 185, 129, ${alpha.toFixed(3)})` } : undefined}
-                                title={prevHa === null ? undefined : `vs. mês anterior: ${formatHa(prevHa)} ha`}
-                              >
-                                <span className="inline-flex items-center justify-center gap-0.5">
-                                  {trend === 'up' ? (
-                                    <ArrowUp className="h-3 w-3 shrink-0 text-emerald-700" strokeWidth={3} />
-                                  ) : trend === 'down' ? (
-                                    <ArrowDown className="h-3 w-3 shrink-0 text-red-600" strokeWidth={3} />
-                                  ) : null}
-                                  <span>{ha > 0 ? formatHa(ha) : '—'}</span>
-                                </span>
-                              </TableCell>
-                            )
-                          })}
-                          <TableCell className="text-right pr-6 font-semibold whitespace-nowrap">{formatHa(c.haAtual)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </div>
-
       {/* Main content grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-6 duration-500 delay-200">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-6 duration-500 delay-150">
 
         {/* Today's schedule */}
         <Card className="xl:col-span-2 border-muted/50 shadow-xl shadow-black/5 relative overflow-hidden">
@@ -1192,6 +804,381 @@ export function Dashboard() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Financeiro do Mês - Consolidado */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-200">
+        <Card className="xl:col-span-2 border-muted/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base capitalize">
+              <Scale className="h-4 w-4 text-primary" />
+              Financeiro · {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+            </CardTitle>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Mês corrente · competência pelo vencimento e caixa realizado
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-x-4 gap-y-5">
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Banknote className="h-3.5 w-3.5" /> Saldo em Caixa</p>
+                <p className={`text-xl font-bold tracking-tight ${data.saldoCaixaAtual >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(data.saldoCaixaAtual)}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">entradas − saídas realizadas</p>
+              </div>
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><TrendingUp className="h-3.5 w-3.5 text-emerald-600" /> Receita do Mês</p>
+                <p className="text-xl font-bold tracking-tight text-emerald-600">{formatCurrency(data.recebidoMes + data.prevReceitaMes)}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Recebido: {formatCurrency(data.recebidoMes)}<br />A receber: {formatCurrency(data.prevReceitaMes)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Wallet className="h-3.5 w-3.5 text-red-600" /> Despesa do Mês</p>
+                <p className="text-xl font-bold tracking-tight text-red-600">{formatCurrency(data.pagoMes + data.prevDespesaMes)}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">Pago: {formatCurrency(data.pagoMes)}<br />A pagar: {formatCurrency(data.prevDespesaMes)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><PiggyBank className="h-3.5 w-3.5" /> Saldo Projetado</p>
+                <p className={`text-xl font-bold tracking-tight ${data.saldoProjetadoMes >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(data.saldoProjetadoMes)}</p>
+                <p className="text-[11px] text-muted-foreground leading-snug">fim do mês · receitas − despesas</p>
+              </div>
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Scale className="h-3.5 w-3.5" /> Ponto de Equilíbrio</p>
+                <p className="text-xl font-bold tracking-tight text-foreground">{formatCurrency(data.pagoMes + data.prevDespesaMes)}</p>
+                <p className={`text-[11px] font-medium leading-snug ${data.pontoEquilibrioPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {data.pontoEquilibrioPct >= 100
+                    ? 'atingido ✓'
+                    : `faltam ${formatCurrency((data.pagoMes + data.prevDespesaMes) - (data.recebidoMes + data.prevReceitaMes))}`}
+                </p>
+              </div>
+            </div>
+
+          </CardContent>
+        </Card>
+
+        <Card className="border-muted/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wallet className="h-4 w-4 text-primary" />
+              Despesas por Tipo
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.despesasPorTipo.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Nenhuma despesa lançada neste mês.</p>
+            ) : (
+              (() => {
+                const maxTotal = data.despesasPorTipo[0]?.total || 1
+                const CORES = ['bg-primary', 'bg-amber-500', 'bg-red-500', 'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500']
+                return data.despesasPorTipo.slice(0, 8).map((d, i) => (
+                  <div key={d.name} className="relative space-y-1 group/row">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium truncate max-w-[70%] cursor-default" title={d.name}>{d.name}</span>
+                      <span className="font-semibold">{formatCurrency(d.total)}</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${CORES[i % CORES.length]}`}
+                        style={{ width: `${Math.max((d.total / maxTotal) * 100, 2)}%` }}
+                      />
+                    </div>
+
+                    {/* Tooltip com os lançamentos da categoria */}
+                    <div className="hidden group-hover/row:block absolute right-0 top-7 z-30 w-80 rounded-lg border border-border bg-popover text-popover-foreground shadow-xl p-3">
+                      <p className="text-xs font-semibold mb-2">
+                        {d.name} · {formatCurrency(d.total)}
+                      </p>
+                      <div className="max-h-52 overflow-y-auto space-y-1.5">
+                        {d.items.map((it, idx) => (
+                          <div key={idx} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="truncate text-muted-foreground">
+                              <span className="text-foreground/70">{it.date ? new Date(`${it.date}T00:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'}</span>
+                              {' · '}{it.desc}
+                            </span>
+                            <span className={`whitespace-nowrap font-medium ${it.paid ? 'text-muted-foreground' : 'text-amber-600'}`}>
+                              {formatCurrency(it.value)}{!it.paid && ' (a pagar)'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              })()
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Histórico por Período ── */}
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-250">
+        <Card className="border-muted/50">
+          <CardHeader className="pb-3">
+            <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CalendarRange className="h-4 w-4 text-primary" />
+                  Histórico por Período
+                  {isPeriodLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Consolidado do período selecionado. O período anterior de mesma duração ({ps?.prevRange ?? '—'}) é a base de comparação.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="month"
+                  value={periodStart}
+                  max={periodEnd}
+                  onChange={(e) => e.target.value && setPeriodStart(e.target.value)}
+                  className="flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <span className="text-xs text-muted-foreground">até</span>
+                <input
+                  type="month"
+                  value={periodEnd}
+                  min={periodStart}
+                  onChange={(e) => e.target.value && setPeriodEnd(e.target.value)}
+                  className="flex h-9 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset(6)}>6 meses</Button>
+                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset(12)}>12 meses</Button>
+                  <Button variant="outline" size="sm" className="h-9 text-xs" onClick={() => applyPreset('ytd')}>Este ano</Button>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!ps ? (
+              <p className="text-sm text-muted-foreground text-center py-6">Selecione um período válido.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-5">
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Droplets className="h-3.5 w-3.5 text-primary" /> Hectares Pulverizados</p>
+                  <p className="text-xl font-bold tracking-tight">{formatHa(ps.totals.hectares)}</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">no período selecionado</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    {ps.totals.resultado >= 0 ? <TrendingUp className="h-3.5 w-3.5 text-emerald-600" /> : <TrendingDown className="h-3.5 w-3.5 text-red-600" />} Resultado
+                  </p>
+                  <p className={cn('text-xl font-bold tracking-tight', ps.totals.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.resultado)}</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">faturamento − despesas</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Banknote className="h-3.5 w-3.5" /> Saldo de Caixa</p>
+                  <p className={cn('text-xl font-bold tracking-tight', ps.totals.saldoFinal >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.saldoFinal)}</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">ao fim do período · entradas − saídas</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {ps && (
+          <>
+            <div>
+              <Card className="border-muted/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" />
+                    Faturamento por Serviço, Despesas e Saldo de Caixa
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="h-[320px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={ps.series} margin={{ top: 10, right: 16, left: 8, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} vertical={false} />
+                        <XAxis dataKey="label" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                          width={70}
+                          tickFormatter={(v: any) => `R$ ${Number(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}k`}
+                        />
+                        <Tooltip
+                          formatter={(value: any, name: any) => [formatCurrency(Number(value) || 0), name]}
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '12px' }} verticalAlign="bottom" height={30} />
+                        <Bar dataKey="faturamento" name="Faturamento (serviço)" fill="#10b981" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="despesa" name="Despesas" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                        <Line type="monotone" dataKey="saldoCaixa" name="Saldo de Caixa" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+            </div>
+
+            <Card className="border-muted/50">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Scale className="h-4 w-4 text-primary" />
+                      Detalhamento do Período
+                    </CardTitle>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Comparativo com o período anterior de mesma duração ({ps.prevRange})
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant={histTab === 'mensal' ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setHistTab('mensal')}
+                    >
+                      Evolução Mensal
+                    </Button>
+                    <Button
+                      variant={histTab === 'clientes' ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setHistTab('clientes')}
+                    >
+                      Hectares por Cliente
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-3">
+                  {[
+                    { label: 'reduziram', value: ps.reduziram, className: 'text-red-600 bg-red-500/10 border-red-500/20' },
+                    { label: 'aumentaram', value: ps.aumentaram, className: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20' },
+                    { label: 'novos', value: ps.novos, className: 'text-blue-600 bg-blue-500/10 border-blue-500/20' },
+                    { label: 'sem serviço', value: ps.perdidos, className: 'text-muted-foreground bg-muted/40 border-border/40' },
+                  ].map((s) => (
+                    <span key={s.label} className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium', s.className)}>
+                      <span className="font-bold">{s.value}</span>
+                      {s.label}
+                    </span>
+                  ))}
+                </div>
+              </CardHeader>
+              <CardContent className="p-0 overflow-x-auto">
+                {histTab === 'mensal' ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="pl-6">Mês</TableHead>
+                      <TableHead className="text-right">Hectares</TableHead>
+                      <TableHead className="text-right text-emerald-600">Faturamento (serviço)</TableHead>
+                      <TableHead className="text-right text-red-600">Despesas</TableHead>
+                      <TableHead className="text-right">Resultado</TableHead>
+                      <TableHead className="text-right text-emerald-600">Entradas (caixa)</TableHead>
+                      <TableHead className="text-right text-red-600">Saídas (caixa)</TableHead>
+                      <TableHead className="text-right pr-6 font-bold text-primary">Saldo de Caixa</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {ps.series.map((m, i) => {
+                      const prevHa = i > 0 ? ps.series[i - 1].hectares : null
+                      const varHa = prevHa && prevHa > 0 ? ((m.hectares - prevHa) / prevHa) * 100 : null
+                      return (
+                      <TableRow key={m.key} className="hover:bg-muted/30">
+                        <TableCell className="pl-6 font-medium capitalize">
+                          {new Date(m.year, m.month - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <span>{formatHa(m.hectares)}</span>
+                            {varHa !== null && (
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-0.5 text-[11px] font-medium',
+                                  varHa > 0 ? 'text-emerald-600' : varHa < 0 ? 'text-red-600' : 'text-muted-foreground'
+                                )}
+                                title={`vs. mês anterior: ${formatHa(prevHa!)} ha`}
+                              >
+                                {varHa > 0 ? <ArrowUpRight className="h-3 w-3" /> : varHa < 0 ? <ArrowDownRight className="h-3 w-3" /> : null}
+                                {Math.abs(varHa).toFixed(0)}%
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right text-emerald-600 font-medium">{formatCurrency(m.faturamento)}</TableCell>
+                        <TableCell className="text-right text-red-600 font-medium">{formatCurrency(m.despesa)}</TableCell>
+                        <TableCell className={cn('text-right font-medium', m.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(m.resultado)}</TableCell>
+                        <TableCell className="text-right text-emerald-600">{formatCurrency(m.entradas)}</TableCell>
+                        <TableCell className="text-right text-red-600">{formatCurrency(m.saidas)}</TableCell>
+                        <TableCell className={cn('text-right pr-6 font-bold', m.saldoCaixa >= 0 ? 'text-primary' : 'text-red-500')}>{formatCurrency(m.saldoCaixa)}</TableCell>
+                      </TableRow>
+                      )
+                    })}
+                    <TableRow className="bg-muted/40 font-semibold border-t-2">
+                      <TableCell className="pl-6">Total</TableCell>
+                      <TableCell className="text-right">{formatHa(ps.totals.hectares)}</TableCell>
+                      <TableCell className="text-right text-emerald-600">{formatCurrency(ps.totals.faturamento)}</TableCell>
+                      <TableCell className="text-right text-red-600">{formatCurrency(ps.totals.despesa)}</TableCell>
+                      <TableCell className={cn('text-right', ps.totals.resultado >= 0 ? 'text-emerald-600' : 'text-red-600')}>{formatCurrency(ps.totals.resultado)}</TableCell>
+                      <TableCell className="text-right text-emerald-600">{formatCurrency(ps.totals.entradas)}</TableCell>
+                      <TableCell className="text-right text-red-600">{formatCurrency(ps.totals.saidas)}</TableCell>
+                      <TableCell className={cn('text-right pr-6', ps.totals.saldoFinal >= 0 ? 'text-primary' : 'text-red-500')}>{formatCurrency(ps.totals.saldoFinal)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+                ) : (
+                <div className="max-h-[520px] overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="pl-6 sticky left-0 z-10 bg-card min-w-[200px]">Cliente</TableHead>
+                        {ps.series.map((m) => (
+                          <TableHead key={m.key} className="text-center px-2 whitespace-nowrap font-medium">{m.label}</TableHead>
+                        ))}
+                        <TableHead className="text-right pr-6 whitespace-nowrap">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {ps.clientComparison.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={ps.series.length + 2} className="text-center py-6 text-muted-foreground">
+                            Nenhum hectare pulverizado registrado nos períodos comparados.
+                          </TableCell>
+                        </TableRow>
+                      ) : ps.clientComparison.map((c) => (
+                        <TableRow key={c.name} className={cn('hover:bg-muted/30', c.haAnterior > 0 && c.haAtual === 0 && 'bg-red-500/5')}>
+                          <TableCell className="pl-6 font-medium truncate max-w-[200px] sticky left-0 z-10 bg-card" title={c.name}>{c.name}</TableCell>
+                          {ps.series.map((m, i) => {
+                            const ha = c.months[m.key] || 0
+                            const prevHa = i > 0 ? c.months[ps.series[i - 1].key] || 0 : null
+                            const trend = prevHa === null || ha === prevHa ? null : ha > prevHa ? 'up' : 'down'
+                            const alpha = ha > 0 ? 0.08 + 0.32 * (ha / psMaxCell) : 0
+                            return (
+                              <TableCell
+                                key={m.key}
+                                className={cn(
+                                  'text-center px-2 tabular-nums',
+                                  ha > 0 ? 'font-medium' : 'text-muted-foreground/40 bg-red-500/5'
+                                )}
+                                style={ha > 0 ? { backgroundColor: `rgba(16, 185, 129, ${alpha.toFixed(3)})` } : undefined}
+                                title={prevHa === null ? undefined : `vs. mês anterior: ${formatHa(prevHa)} ha`}
+                              >
+                                <span className="inline-flex items-center justify-center gap-0.5">
+                                  {trend === 'up' ? (
+                                    <ArrowUp className="h-3 w-3 shrink-0 text-emerald-700" strokeWidth={3} />
+                                  ) : trend === 'down' ? (
+                                    <ArrowDown className="h-3 w-3 shrink-0 text-red-600" strokeWidth={3} />
+                                  ) : null}
+                                  <span>{ha > 0 ? formatHa(ha) : '—'}</span>
+                                </span>
+                              </TableCell>
+                            )
+                          })}
+                          <TableCell className="text-right pr-6 font-semibold whitespace-nowrap">{formatHa(c.haAtual)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
 
       {/* Últimos Registros - Cards */}
